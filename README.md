@@ -36,7 +36,7 @@ OpenPoints only serves as an engine. Please refer to [PointNeXt](https://github.
 ## TODO
 
 - [  ] pip install support
-- [  ] cleaned code for shapenetpart
+- [  ] clean code for shapenetpart
 - [  ] more models
 
 
