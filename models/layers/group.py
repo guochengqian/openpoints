@@ -76,6 +76,7 @@ class DilatedKNN(nn.Module):
 class GroupingOperation(Function):
 
     @staticmethod
+    @torch.cuda.custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, features: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
         """
         :param ctx:
