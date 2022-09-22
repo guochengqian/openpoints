@@ -22,7 +22,7 @@ OpenPoints currently supports reproducing the following models:
 
       ```
    model = build_model_from_cfg(cfg.model)
-   criterion = build_criterion_from_cfg(cfg.criterion)
+   criterion = build_criterion_from_cfg(cfg.criterion_args)
    ```
 
 
@@ -34,9 +34,7 @@ OpenPoints only serves as an engine. Please refer to [PointNeXt](https://github.
 
 
 ## TODO
-
 - [  ] pip install support
-- [  ] clean code for shapenetpart
 - [  ] more models
 
 
@@ -47,8 +45,8 @@ If you use this library, please kindly acknowledge our work:
 ```tex
 @Article{qian2022pointnext,
   author  = {Qian, Guocheng and Li, Yuchen and Peng, Houwen and Mai, Jinjie and Hammoud, Hasan and Elhoseiny, Mohamed and Ghanem, Bernard},
-  journal = {arXiv:2206.04670},
   title   = {PointNeXt: Revisiting PointNet++ with Improved Training and Scaling Strategies},
+  journal = {arXiv:2206.04670},
   year    = {2022},
 }
 ```

@@ -43,6 +43,7 @@ three_nn = ThreeNN.apply
 class ThreeInterpolate(Function):
 
     @staticmethod
+    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, features: torch.Tensor, idx: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
         """
         Performs weight linear interpolation on 3 features

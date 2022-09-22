@@ -82,7 +82,7 @@ class DGCNN(nn.Module):
         fusion = self.fusion_block(feats)
         return fusion
 
-    def forward_all_features(self, pts, features=None):
+    def forward_seg_feat(self, pts, features=None):
         feats = self.forward(pts, features)    
         return pts, feats
     

@@ -1,20 +1,17 @@
 """PointNet++ variants Implementation.
 1. PointNet++: Deep Hierarchical Feature Learning on Point Sets in a Metric Space
     by Charles R. Qi, Li (Eric) Yi, Hao Su, Leonidas J. Guibas from Stanford University.
-
 2. ASSANet: An Anisotropical Separable Set Abstraction forEfficient Point Cloud Representation Learning
     by Guocheng Qian, etal. @ NeurIPS 2021 Spotlight
-
 Reference:
 https://github.com/sshaoshuai/Pointnet2.PyTorch
-
 """
 from typing import List, Optional
 
 import torch
 import torch.nn as nn
-from ..layers import furthest_point_sample, random_sample, LocalAggregation, three_interpolation, create_convblock1d
 import logging
+from ..layers import furthest_point_sample, random_sample,  LocalAggregation, three_interpolation, create_convblock1d # grid_subsampling,
 from ..build import MODELS
 
 
@@ -36,9 +33,10 @@ class PointNetSAModuleMSG(nn.Module):
                  conv_args: dict,
                  norm_args: dict,
                  act_args: dict,
-                 sample_method='fps',
+                 sampler='fps',
                  use_res=False,
-                 query_as_support=False, 
+                 query_as_support=False,
+                 voxel_size=0.1, 
                  **kwargs
                  ):
         super().__init__()
@@ -46,10 +44,10 @@ class PointNetSAModuleMSG(nn.Module):
         self.blocks = len(channel_list)
         self.query_as_support=query_as_support
 
-        # build the sampling layer
-        if sample_method.lower() == 'fps':
+        # build the sampling layer:
+        if 'fps' in sampler.lower() or 'furthest' in sampler.lower():
             self.sample_fn = furthest_point_sample
-        elif sample_method.lower() == 'random':
+        elif 'random' in sampler.lower():
             self.sample_fn = random_sample
 
         # holder for the grouper and convs (MLPs, \etc)
@@ -94,7 +92,7 @@ class PointNetSAModuleMSG(nn.Module):
             new_features = self.local_aggregations[i](
                 query_xyz, support_xyz, support_features, query_idx=idx)
             new_features_list.append(new_features)
-            
+
             if self.query_as_support:
                 support_xyz = query_xyz
                 support_features = new_features
@@ -103,12 +101,12 @@ class PointNetSAModuleMSG(nn.Module):
 
 
 class PointNetFPModule(nn.Module):
-    r"""Feature Propagation module in PointNet++. 
+    r"""Feature Propagation module in PointNet++.
     Propagates the features of one set to another"""
 
     def __init__(self, mlp: List[int],
                  norm_args={'norm': 'bn1d'},
-                 act_args={'act': 'relu'}
+                 act_args={'act': 'relu'},
                  ):
         """
         :param mlp: list of channel sizes
@@ -156,7 +154,7 @@ class PointNet2Encoder(nn.Module):
         radius (List[float]orfloat): radius to use at each stage or initial raidus
         num_samples (List[int]orint): neighbood size to use at each block or initial neighbohood size
         aggr_args (dict): dict of configurations for local aggregation
-        group_args (dict): dict of configurations for neighborhood query 
+        group_args (dict): dict of configurations for neighborhood query
         conv_args (dict): dict of configurations for convolution layers
         norm_args (dict): dict of configurations for normalization layers
         act_args (dict): dict of configurations for activation layers
@@ -169,13 +167,13 @@ class PointNet2Encoder(nn.Module):
         radius_scaling (int, optional): scale ratio of radius after each stage. Defaults to 2.
         block_radius_scaling (int, optional): scale ratio of radius after each block. Defaults to 1.
         nsample_scaling (int, optional): scale ratio of radius after each stage. Defaults to 1.
-        sample_method (str, optional): the method for point cloud downsampling. Defaults to 'fps'.
+        sampler (str, optional): the method for point cloud downsampling. Defaults to 'fps'.
         use_res (bool, optional): whether use residual connections in SA block. Defaults to False.  Set to True in ASSANet
         stem_conv (bool, optional): whether using stem MLP. Defaults to False.
         stem_aggr (bool, optional): whether use an additional local aggregation before downsampling. Defaults to False. Set to True in ASSANet
         double_last_channel (bool, optional): whether double the channel sizes of the last layer inside each block. Defaults to False. Set to False in ASSANet
         query_as_support (bool, optional): whether to use query set as support set. Defaults to False. Set to True in ASSANet
-    """ 
+    """
     def __init__(self,
                  in_channels: int,
                  radius: List[float] or float,
@@ -194,12 +192,12 @@ class PointNet2Encoder(nn.Module):
                  radius_scaling: int = 2,
                  block_radius_scaling: int = 1,
                  nsample_scaling: int = 1,
-                 sample_method: str = 'fps',
+                 sampler: str = 'fps',
                  use_res=False,
                  stem_conv=False,
                  stem_aggr=False,
                  double_last_channel=True,
-                 query_as_support=False, 
+                 query_as_support=False,
                  **kwargs
                  ):
         super().__init__()
@@ -277,7 +275,7 @@ class PointNet2Encoder(nn.Module):
                     conv_args=conv_args,
                     norm_args=norm_args,
                     act_args=act_args,
-                    sample_method=sample_method,
+                    sampler=sampler,
                     use_res=use_res,
                     query_as_support=query_as_support
                 )
@@ -321,11 +319,12 @@ class PointNet2Encoder(nn.Module):
             xyz, features = self.SA_modules[i](xyz, features)
         return features.squeeze(-1)
 
-    def forward_all_features(self, xyz, features=None):
+    def forward_seg_feat(self, xyz, features=None):
         if hasattr(xyz, 'keys'):
             xyz, features = xyz['pos'], xyz['x']
         if features is None:
             features = xyz.clone().transpose(1, 2).contiguous()
+        xyz = xyz.contiguous()
         if self.stem_conv:
             features = self.conv1(features)
         if self.stem_aggr:
@@ -342,7 +341,7 @@ class PointNet2Encoder(nn.Module):
     def forward(self, xyz, features=None):
         if hasattr(xyz, 'keys'):
             xyz, features = xyz['pos'], xyz['x']
-        return self.forward_all_features(xyz, features)
+        return self.forward_seg_feat(xyz, features)
 
 
 @MODELS.register_module()
@@ -350,7 +349,7 @@ class PointNet2Decoder(nn.Module):
     """Decoder for PointNet++
     """
     def __init__(self,
-                 encoder_channel_list: List[int], 
+                 encoder_channel_list: List[int],
                  mlps=None,
                  fp_mlps=None,
                  decoder_layers=1,
@@ -368,7 +367,7 @@ class PointNet2Decoder(nn.Module):
                 else skip_channel_list[-1]
             self.FP_modules.append(
                 PointNetFPModule(
-                    [pre_channel + skip_channel_list[k]] + fp_mlps[k] 
+                    [pre_channel + skip_channel_list[k]] + fp_mlps[k]
                 )
             )
         self.out_channels = fp_mlps[0][-1]
@@ -472,8 +471,6 @@ class PointNet2PartDecoder(nn.Module):
             self.FP_modules.append(
                 PointNetFPModule(
                     [pre_channel + skip_channel_list[k]] + fp_mlps[k],
-                    conv_args, norm_args, act_args, radius[k], num_samples[k],
-                    decocder_aggr_args, group_args, use_res
                 )
             )
         self.out_channels = fp_mlps[0][-1]

@@ -134,7 +134,7 @@ def resume_checkpoint(config, model, optimizer=None, scheduler=None, pretrained_
     torch.cuda.empty_cache()
 
 
-def load_checkpoint(model, pretrained_path):
+def load_checkpoint(model, pretrained_path, module=None):
     if not os.path.exists(pretrained_path):
         raise NotImplementedError('no checkpoint file from path %s...' % pretrained_path)
     # load state dict
@@ -143,10 +143,12 @@ def load_checkpoint(model, pretrained_path):
     # parameter resume of base model
     ckpt_state_dict = state_dict
     for key in state_dict.keys():
-        if key in ['model', 'net', 'network']:
+        if key in ['model', 'net', 'network', 'state_dict', 'base_model']:
             ckpt_state_dict = ckpt_state_dict[key]
     base_ckpt = {k.replace("module.", ""): v for k, v in ckpt_state_dict.items()}
-
+    if module is not None:
+        base_ckpt = {k:v for k, v in base_ckpt.items() if module in k}
+        
     if hasattr(model, 'module'):
         incompatible = model.module.load_state_dict(base_ckpt, strict=False)
     else:

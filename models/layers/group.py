@@ -76,7 +76,7 @@ class DilatedKNN(nn.Module):
 class GroupingOperation(Function):
 
     @staticmethod
-    @torch.cuda.custom_fwd(cast_inputs=torch.float32)
+    @torch.cuda.amp.custom_fwd(cast_inputs=torch.float32)
     def forward(ctx, features: torch.Tensor, idx: torch.Tensor) -> torch.Tensor:
         """
         :param ctx:
@@ -117,6 +117,26 @@ class GroupingOperation(Function):
 grouping_operation = GroupingOperation.apply
 
 
+def torch_grouping_operation(features, idx):
+    r"""from torch points kernels
+    Parameters
+    ----------
+    features : torch.Tensor
+        (B, C, N) tensor of features to group
+    idx : torch.Tensor
+        (B, npoint, nsample) tensor containing the indicies of features to group with
+
+    Returns
+    -------
+    torch.Tensor
+        (B, C, npoint, nsample) tensor
+    """
+    all_idx = idx.reshape(idx.shape[0], -1)
+    all_idx = all_idx.unsqueeze(1).repeat(1, features.shape[1], 1)
+    grouped_features = features.gather(2, all_idx)
+    return grouped_features.reshape(idx.shape[0], features.shape[1], idx.shape[1], idx.shape[2])
+
+
 class GatherOperation(Function):
 
     @staticmethod
@@ -141,7 +161,7 @@ class GatherOperation(Function):
         return output
 
     @staticmethod
-    def backward(ctx, grad_out):  # todo: understand this part. why needs this backward??
+    def backward(ctx, grad_out):
         idx, C, N = ctx.for_backwards
         B, npoint = idx.size()
 
@@ -228,14 +248,17 @@ class QueryAndGroup(nn.Module):
         xyz_trans = support_xyz.transpose(1, 2).contiguous()
         grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
         if self.relative_xyz:
-            grouped_xyz -= query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
-        if self.normalize_dp:
-            grouped_xyz /= self.radius
+            relative_xyz = grouped_xyz - query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
+            if self.normalize_dp:
+                relative_xyz /= self.radius
+        else:
+            relative_xyz = None
+
         if features is not None:
             grouped_features = grouping_operation(features, idx)
-            return grouped_xyz, grouped_features
+            return grouped_xyz, relative_xyz, grouped_features
         else:
-            return grouped_xyz, None
+            return grouped_xyz, relative_xyz, None
 
 
 class GroupAll(nn.Module):
@@ -298,7 +321,7 @@ class KNNGroup(nn.Module):
         if self.relative_xyz:
             grouped_xyz -= query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
         if self.normalize_dp:
-            grouped_xyz /= torch.abs(grouped_xyz).max(dim=-1, keepdim=True)[0]
+            grouped_xyz /= torch.amax(torch.sqrt(torch.sum(grouped_xyz**2, dim=1)), dim=(1, 2)).view(-1, 1, 1, 1)
         if features is not None:
             grouped_features = grouping_operation(features, idx)
             return grouped_xyz, grouped_features

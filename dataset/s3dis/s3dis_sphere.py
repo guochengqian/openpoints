@@ -4,8 +4,8 @@ import numpy as np
 import os
 import pickle
 from sklearn.neighbors import KDTree
-from ..grid_sample import grid_subsampling
 from ..build import DATASETS
+from ..data_util import crop_pc, voxelize
 from tqdm import tqdm
 import logging
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -26,10 +26,25 @@ class S3DISSphere(data.Dataset):
                       10: 'sofa',
                       11: 'board',
                       12: 'clutter'}
-    name_to_label = {i: v for i, v in enumerate(label_to_names)}
+    name_to_label = {v: i for i, v in enumerate(label_to_names.values())}
+    classes = list(label_to_names.values())
     color_mean = np.array([0.5136457, 0.49523646, 0.44921124])
     color_std = np.array([0.18308958, 0.18415008, 0.19252081])
-    numer_clsses = 13
+    num_classes = 13
+    class2color = {'ceiling':     [0, 255, 0],
+                   'floor':       [0, 0, 255],
+                   'wall':        [0, 255, 255],
+                   'beam':        [255, 255, 0],
+                   'column':      [255, 0, 255],
+                   'window':      [100, 100, 255],
+                   'door':        [200, 200, 100],
+                   'chair':       [255, 0, 0],
+                   'table':       [170, 120, 200],
+                   'bookcase':    [10, 200, 100],
+                   'sofa':        [200, 100, 100],
+                   'board':       [200, 200, 200],
+                   'clutter':     [50, 50, 50]}
+    cmap = np.array([*class2color.values()]).astype(np.uint8)
     """S3DIS dataset for scene segmentation task.
     Args:
         voxel_size: grid length for pre-subsampling point clouds.
@@ -79,63 +94,58 @@ class S3DISSphere(data.Dataset):
             cloud_points_list, cloud_points_color_list, cloud_points_label_list = [], [], []
             sub_cloud_points_list, sub_cloud_points_label_list, sub_cloud_points_color_list = [], [], []
             sub_cloud_tree_list = []
-
+            cloud_rooms_list = []
             for cloud_idx, cloud_name in enumerate(cloud_names):
                 # Pass if the cloud has already been computed
-                cloud_file = os.path.join(processed_dir, cloud_name + '.pkl')
-                if os.path.exists(cloud_file):
-                    with open(cloud_file, 'rb') as f:
-                        cloud_points, cloud_colors, cloud_classes = pickle.load(f)
-                else:
-                    # Get rooms of the current cloud
-                    cloud_folder = os.path.join(data_root,cloud_name)
-                    room_folders = [os.path.join(cloud_folder, room) for room in os.listdir(cloud_folder) if
-                                    os.path.isdir(os.path.join(cloud_folder, room))]
-                    # Initiate containers
-                    cloud_points = np.empty((0, 3), dtype=np.float32)
-                    cloud_colors = np.empty((0, 3), dtype=np.float32)
-                    cloud_classes = np.empty((0, 1), dtype=np.int32)
-                    # Loop over rooms
-                    for i, room_folder in enumerate(room_folders):
-                        print(
-                            'Cloud %s - Room %d/%d : %s' % (
-                                cloud_name, i + 1, len(room_folders), room_folder.split('\\')[-1]))
-                        # if 'hallway_6' not in room_folder:
-                        #     continue
-                        for object_name in os.listdir(os.path.join(room_folder, 'Annotations')):
-                            if object_name[-4:] == '.txt':
-                                # Text file containing point of the object
-                                object_file = os.path.join(room_folder, 'Annotations', object_name)
-                                # Object class and ID
-                                tmp = object_name[:-4].split('_')[0]
-                                if tmp in self.name_to_label:
-                                    object_class = self.name_to_label[tmp]
-                                elif tmp in ['stairs']:
-                                    object_class = self.name_to_label['clutter']
-                                else:
-                                    raise ValueError(
-                                        'Unknown object name: ' + str(tmp))
-                                # Read object points and colors
-                                try:
-                                    object_data = np.loadtxt(object_file)
-                                except:
-                                    logging.info(object_file)
-                                # Stack all data
-                                cloud_points = np.vstack(
-                                    (cloud_points, object_data[:, 0:3].astype(np.float32)))
-                                cloud_colors = np.vstack(
-                                    (cloud_colors, object_data[:, 3:6].astype(np.uint8)))
-                                object_classes = np.full(
-                                    (object_data.shape[0], 1), object_class, dtype=np.int32)
-                                cloud_classes = np.vstack(
-                                    (cloud_classes, object_classes))
-                    with open(cloud_file, 'wb') as f:
-                        pickle.dump(
-                            (cloud_points, cloud_colors, cloud_classes), f)
+                # Get rooms of the current cloud
+                cloud_folder = os.path.join(data_root,cloud_name)
+                room_folders = [os.path.join(cloud_folder, room) for room in os.listdir(cloud_folder) if
+                                os.path.isdir(os.path.join(cloud_folder, room))]
+                # Initiate containers
+                cloud_points = np.empty((0, 3), dtype=np.float32)
+                cloud_colors = np.empty((0, 3), dtype=np.float32)
+                cloud_classes = np.empty((0, 1), dtype=np.int32)
+                cloud_room_split = [0]
+                # Loop over rooms
+                for i, room_folder in enumerate(room_folders):
+                    print(
+                        'Cloud %s - Room %d/%d : %s' % (
+                            cloud_name, i + 1, len(room_folders), room_folder.split('\\')[-1]))
+                    room_npoints = []
+                    for object_name in os.listdir(os.path.join(room_folder, 'Annotations')):
+                        if object_name[-4:] == '.txt':
+                            # Text file containing point of the object
+                            object_file = os.path.join(room_folder, 'Annotations', object_name)
+                            # Object class and ID
+                            tmp = object_name[:-4].split('_')[0]
+                            if tmp in self.name_to_label:
+                                object_class = self.name_to_label[tmp]
+                            elif tmp in ['stairs']:
+                                object_class = self.name_to_label['clutter']
+                            else:
+                                raise ValueError(
+                                    'Unknown object name: ' + str(tmp))
+                            # Read object points and colors
+                            try:
+                                object_data = np.loadtxt(object_file)
+                            except:
+                                logging.info(f"error in reading file {object_file}")
+                            # Stack all data
+                            room_npoints.append(len(object_data))
+                            cloud_points = np.vstack(
+                                (cloud_points, object_data[:, 0:3].astype(np.float32)))
+                            cloud_colors = np.vstack(
+                                (cloud_colors, object_data[:, 3:6].astype(np.uint8)))
+                            object_classes = np.full(
+                                (object_data.shape[0], 1), object_class, dtype=np.int32)
+                            cloud_classes = np.vstack(
+                                (cloud_classes, object_classes))
+                    cloud_room_split.append(cloud_room_split[-1]+sum(room_npoints))
                 cloud_points_list.append(cloud_points)
                 cloud_points_color_list.append(cloud_colors)
                 cloud_points_label_list.append(cloud_classes)
-
+                cloud_rooms_list.append(cloud_room_split)
+                
                 sub_cloud_file = os.path.join(
                     processed_dir, cloud_name + f'_{voxel_size:.3f}_sub.pkl')
                 if os.path.exists(sub_cloud_file):
@@ -144,10 +154,8 @@ class S3DISSphere(data.Dataset):
                             f)
                 else:
                     if voxel_size > 0:
-                        sub_points, sub_colors, sub_labels = grid_subsampling(cloud_points,
-                                                                              features=cloud_colors,
-                                                                              labels=cloud_classes,
-                                                                              sampleDl=voxel_size)
+                        sub_points, sub_colors, sub_labels = crop_pc(
+                            cloud_points, cloud_colors, cloud_classes, voxel_size=voxel_size)
                         sub_labels = np.squeeze(sub_labels)
                     else:
                         sub_points = cloud_points
@@ -170,7 +178,8 @@ class S3DISSphere(data.Dataset):
             self.clouds_points = cloud_points_list
             self.clouds_points_colors = cloud_points_color_list
             self.clouds_points_labels = cloud_points_label_list
-
+            self.clouds_rooms = cloud_rooms_list
+            
             # grid subsampled points
             self.sub_clouds_points = sub_cloud_points_list
             self.sub_clouds_points_colors = sub_cloud_points_color_list
@@ -178,13 +187,13 @@ class S3DISSphere(data.Dataset):
             self.sub_cloud_trees = sub_cloud_tree_list
 
             with open(filename, 'wb') as f:
-                pickle.dump((self.clouds_points, self.clouds_points_colors, self.clouds_points_labels,
+                pickle.dump((self.clouds_points, self.clouds_points_colors, self.clouds_points_labels, self.clouds_rooms, 
                              self.sub_clouds_points, self.sub_clouds_points_colors, self.sub_clouds_points_labels,
                              self.sub_cloud_trees), f)
                 print(f"{filename} saved successfully")
         else:
             with open(filename, 'rb') as f:
-                (self.clouds_points, self.clouds_points_colors, self.clouds_points_labels,
+                (self.clouds_points, self.clouds_points_colors, self.clouds_points_labels, self.clouds_rooms, 
                  self.sub_clouds_points, self.sub_clouds_points_colors, self.sub_clouds_points_labels,
                  self.sub_cloud_trees) = pickle.load(f)
                 print(f"{filename} loaded successfully")
@@ -208,7 +217,6 @@ class S3DISSphere(data.Dataset):
                     # cloud_ind is the index for area in each split. for test, only 1 cloud.
                     cloud_ind = int(np.argmin(min_potentials))
                     point_ind = np.argmin(potentials[cloud_ind])
-                    # print(f"[{ep}/{st}]: {cloud_ind}/{point_ind}")
                     self.cloud_inds.append(cloud_ind)
                     self.point_inds.append(point_ind)
                     points = np.array(
@@ -217,8 +225,7 @@ class S3DISSphere(data.Dataset):
                     noise = np.random.normal(
                         scale=self.in_radius / 10, size=center_point.shape)
                     self.noise.append(noise)
-                    pick_point = center_point + \
-                        noise.astype(center_point.dtype)
+                    pick_point = center_point + noise.astype(center_point.dtype)
                     # Indices of points in input region
                     query_inds = self.sub_cloud_trees[cloud_ind].query_radius(pick_point,
                                                                               r=self.in_radius,
@@ -235,7 +242,6 @@ class S3DISSphere(data.Dataset):
                     potentials[cloud_ind][query_inds] += tukeys
                     min_potentials[cloud_ind] = float(
                         np.min(potentials[cloud_ind]))
-                    # print(f"====>min_potentials: {min_potentials}")
             with open(filename, 'wb') as f:
                 pickle.dump((self.cloud_inds, self.point_inds, self.noise), f)
                 print(f"{filename} saved successfully")

@@ -372,13 +372,13 @@ class PointMLP(PointMLPEncoder):
         )
 
     def forward(self, p, x=None):
-        if isinstance(p, dict):
-            p, x = p['pos'], p.get('x', None)
-        if x is None:
-            x = p.transpose(1, 2).contiguous()
         return self.forward_cls_feat(p, x)
 
     def forward_cls_feat(self, p, x=None):
+        if hasattr(p, 'keys'): 
+            p, x = p['pos'], p.get('x', None)
+        if x is None:
+            x = p.transpose(1, 2).contiguous()
         x = self.embedding(x)  # B,D,N
         for i in range(self.stages):
             # Give p[b, p, 3] and fea[b, p, d], return new_xyz[b, g, 3] and new_fea[b, g, k, d]

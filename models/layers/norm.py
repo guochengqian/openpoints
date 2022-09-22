@@ -58,34 +58,46 @@ _NORM_LAYER = dict(
     bn1d=nn.BatchNorm1d,
     bn2d=nn.BatchNorm2d,
     bn=nn.BatchNorm2d,
+    in2d=nn.InstanceNorm2d, 
+    in1d=nn.InstanceNorm1d, 
     gn=nn.GroupNorm,
     syncbn=nn.SyncBatchNorm,
     ln=nn.LayerNorm,    # for tokens
     ln1d=LayerNorm1d,   # for point cloud
+    ln2d=LayerNorm2d,   # for point cloud
     fastbn1d=FastBatchNorm1d, 
     fastbn2d=FastBatchNorm1d, 
     fastbn=FastBatchNorm1d, 
 )
 
 
-def create_norm(norm_args, channels):
+def create_norm(norm_args, channels, dimension=None):
     """Build normalization layer.
     Returns:
         nn.Module: Created normalization layer.
     """
     if norm_args is None:
         return None
-    norm_args = copy.deepcopy(norm_args)
-    norm = norm_args.pop('norm', None)
+    if isinstance(norm_args, dict):    
+        norm_args = edict(copy.deepcopy(norm_args))
+        norm = norm_args.pop('norm', None)
+    else:
+        norm = norm_args
+        norm_args = edict()
     if norm is None:
         return None
     if isinstance(norm, str):
         norm = norm.lower()
+        if dimension is not None:
+            dimension = str(dimension).lower()
+            if dimension not in norm:
+                norm += dimension
         assert norm in _NORM_LAYER.keys(), f"input {norm} is not supported"
         norm = _NORM_LAYER[norm]
     return norm(channels, **norm_args)
 
 
+# TODO: remove create_norm1d
 def create_norm1d(norm_args, channels):
     """Build normalization layer.
     Returns:
@@ -100,7 +112,6 @@ def create_norm1d(norm_args, channels):
     if norm is None:
         return None
 
-    assert '2d' not in norm, "normalization type can not be 2d"
     if '1d' not in norm and norm != 'ln':
         norm_args_copy.norm += '1d'
     return create_norm(norm_args_copy, channels)

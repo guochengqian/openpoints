@@ -1,9 +1,8 @@
 from distutils.command.build import build
-from sklearn.cluster import k_means
 import torch.nn as nn
 
 from .activation import create_act
-from .norm import create_norm, create_norm1d
+from .norm import create_norm, create_norm
 
 
 class Conv2d(nn.Conv2d):
@@ -28,7 +27,7 @@ def create_convblock2d(*args,
     out_channels = args[1]
     bias = kwargs.pop('bias', True)
     if order == 'conv-norm-act':
-        norm_layer = create_norm(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='2d')
         bias = False if norm_layer is not None else bias
         conv_layer = [Conv2d(*args, bias=bias, **kwargs)]
         if norm_layer is not None:
@@ -39,7 +38,7 @@ def create_convblock2d(*args,
 
     elif order == 'norm-act-conv':
         conv_layer = []
-        norm_layer = create_norm(norm_args, in_channels)
+        norm_layer = create_norm(norm_args, in_channels, dimension='2d')
         bias = False if norm_layer is not None else bias
         if norm_layer is not None:
             conv_layer.append(norm_layer)
@@ -49,7 +48,7 @@ def create_convblock2d(*args,
         conv_layer.append(Conv2d(*args, bias=bias, **kwargs))
 
     elif order == 'conv-act-norm':
-        norm_layer = create_norm(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='2d')
         bias = False if norm_layer is not None else bias
         conv_layer = [Conv2d(*args, bias=bias, **kwargs)]
         act_layer = create_act(act_args)
@@ -69,7 +68,7 @@ def create_convblock1d(*args,
     in_channels = args[0]
     bias = kwargs.pop('bias', True)
     if order == 'conv-norm-act':
-        norm_layer = create_norm1d(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='1d')
         bias = False if norm_layer is not None else bias
         conv_layer = [Conv1d(*args, bias=bias, **kwargs)]
         if norm_layer is not None:
@@ -80,7 +79,7 @@ def create_convblock1d(*args,
 
     elif order == 'norm-act-conv':
         conv_layer = []
-        norm_layer = create_norm1d(norm_args, in_channels)
+        norm_layer = create_norm(norm_args, in_channels, dimension='1d')
         bias = False if norm_layer is not None else bias
         if norm_layer is not None:
             conv_layer.append(norm_layer)
@@ -90,7 +89,7 @@ def create_convblock1d(*args,
         conv_layer.append(Conv1d(*args, bias=bias, **kwargs))
 
     elif order == 'conv-act-norm':
-        norm_layer = create_norm1d(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='1d')
         bias = False if norm_layer is not None else bias
         conv_layer = [Conv1d(*args, bias=bias, **kwargs)]
         act_layer = create_act(act_args)
@@ -114,7 +113,7 @@ def create_linearblock(*args,
     bias = kwargs.pop('bias', True)
 
     if order == 'conv-norm-act':
-        norm_layer = create_norm1d(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='1d')
         bias = False if norm_layer is not None else bias
         linear_layer = [nn.Linear(*args, bias, **kwargs)]
         if norm_layer is not None:
@@ -124,7 +123,7 @@ def create_linearblock(*args,
             linear_layer.append(act_layer)
     elif order == 'norm-act-conv':
         linear_layer = []
-        norm_layer = create_norm1d(norm_args, in_channels)
+        norm_layer = create_norm(norm_args, in_channels, dimension='1d')
         bias = kwargs.pop('bias', True)
         bias = False if norm_layer is not None else bias
         if norm_layer is not None:
@@ -135,7 +134,7 @@ def create_linearblock(*args,
         linear_layer.append(nn.Linear(*args, bias=bias, **kwargs))
 
     elif order == 'conv-act-norm':
-        norm_layer = create_norm1d(norm_args, out_channels)
+        norm_layer = create_norm(norm_args, out_channels, dimension='1d')
         bias = False if norm_layer is not None else bias
         linear_layer = [nn.Linear(*args, bias=bias, **kwargs)]
         act_layer = create_act(act_args)

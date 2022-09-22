@@ -3,6 +3,23 @@ import torch.nn as nn
 # from knn_cuda import KNN as KNNCUDA
 
 
+@torch.no_grad()
+def knn_point(k, query, support=None):
+    """Get the distances and indices to a fixed number of neighbors
+        Args:
+            support ([tensor]): [B, N, C]
+            query ([tensor]): [B, M, C]
+
+        Returns:
+            [int]: neighbor idx. [B, M, K]
+    """
+    if support is None:
+        support = query
+    dist = torch.cdist(query, support)
+    k_dist = dist.topk(k=k, dim=-1, largest=False, sorted=True)
+    return k_dist.values, k_dist.indices
+    
+
 class KNN(nn.Module):
     """Get the distances and indices to a fixed number of neighbors
 

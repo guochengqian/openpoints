@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 import logging
 from typing import List
-from openpoints.models.layers.norm import create_norm1d
+from ..layers.norm import create_norm1d
 from ..layers import create_linearblock
 from ...utils import get_missing_parameters_message, get_unexpected_parameters_message
 from ..build import MODELS, build_model_from_cfg
+from ...loss import build_criterion_from_cfg
+from ...utils import load_checkpoint
 
 
 @MODELS.register_module()
@@ -13,47 +15,65 @@ class BaseCls(nn.Module):
     def __init__(self,
                  encoder_args=None,
                  cls_args=None,
+                 criterion_args=None, 
                  **kwargs):
         super().__init__()
         self.encoder = build_model_from_cfg(encoder_args)
-        in_channels = self.encoder.out_channels if hasattr(self.encoder, 'out_channels') else cls_args.get('in_channels', None)
-        cls_args.in_channels = in_channels
-        self.prediction = build_model_from_cfg(cls_args)
-
-    def forward(self, p0, f0=None):
-        global_feat = self.encoder.forward_cls_feat(p0, f0)
+        
+        if cls_args is not None:
+            in_channels = self.encoder.out_channels if hasattr(self.encoder, 'out_channels') else cls_args.get('in_channels', None)
+            cls_args.in_channels = in_channels
+            self.prediction = build_model_from_cfg(cls_args)
+        else:
+            self.prediction = nn.Identity()
+        self.criterion = build_criterion_from_cfg(criterion_args) if criterion_args is not None else None
+        
+    def forward(self, data):
+        global_feat = self.encoder.forward_cls_feat(data)
         return self.prediction(global_feat)
 
-    def get_loss_acc(self, ret, gt):
-        loss = self.criterion(ret, gt.long())
-        pred = ret.argmax(-1)
-        acc = (pred == gt).sum() / float(gt.size(0))
-        return loss, acc * 100
+    def get_loss(self, pred, gt, inputs=None):
+        return self.criterion(pred, gt.long())
 
-    def load_model_from_ckpt(self, ckpt_path, only_encoder=False):
-        ckpt = torch.load(ckpt_path)
-        base_ckpt=ckpt
-        if  'model' in ckpt:
-            base_ckpt = {k.replace("module.", ""): v for k, v in ckpt['model'].items()}
+    def get_logits_loss(self, data, gt):
+        logits = self.forward(data)
+        return logits, self.criterion(logits, gt.long())
 
-        if only_encoder:
-            base_ckpt = {k.replace("encoder.", ""): v for k, v in base_ckpt.items()}
-            incompatible = self.encoder.load_state_dict(base_ckpt, strict=False)
+
+@MODELS.register_module()
+class DistillCls(BaseCls):
+    def __init__(self,
+                 encoder_args=None,
+                 cls_args=None,
+                 distill_args=None, 
+                 criterion_args=None, 
+                 **kwargs):
+        super().__init__(encoder_args, cls_args, criterion_args)
+        self.distill = encoder_args.get('distill', True)
+        in_channels = self.encoder.distill_channels
+        distill_args.distill_head_args.in_channels = in_channels
+        self.dist_head = build_model_from_cfg(distill_args.distill_head_args)
+        self.dist_model = build_model_from_cfg(distill_args).cuda()
+        load_checkpoint(self.dist_model, distill_args.pretrained_path)
+        self.dist_model.eval()
+
+    def forward(self, p0, f0=None):
+        if hasattr(p0, 'keys'):
+            p0, f0 = p0['pos'], p0['x']
+        if self.distill and self.training: 
+            global_feat, distill_feature = self.encoder.forward_cls_feat(p0, f0)
+            return self.prediction(global_feat), self.dist_head(distill_feature)
         else:
-            incompatible = self.load_state_dict(base_ckpt, strict=False)
-        if incompatible.missing_keys:
-            logging.info('missing_keys')
-            logging.info(
-                get_missing_parameters_message(incompatible.missing_keys),
-            )
-        if incompatible.unexpected_keys:
-            logging.info('unexpected_keys')
-            logging.info(
-                get_unexpected_parameters_message(incompatible.unexpected_keys),
+            global_feat = self.encoder.forward_cls_feat(p0, f0)
+            return self.prediction(global_feat)
+         
+    def get_loss(self, pred, gt, inputs):
+        return self.criterion(inputs, pred, gt.long(), self.dist_model)
 
-            )
-        logging.info(f'Successful Loading the ckpt from {ckpt_path}')
-
+    def get_logits_loss(self, data, gt):
+        logits, dist_logits = self.forward(data)
+        return logits, self.criterion(data, [logits, dist_logits], gt.long(), self.dist_model)
+    
 
 @MODELS.register_module()
 class ClsHead(nn.Module):
@@ -86,7 +106,10 @@ class ClsHead(nn.Module):
             logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")
         self.cls_feat = cls_feat.split(',') if cls_feat is not None else None
         in_channels = len(self.cls_feat) * in_channels if cls_feat is not None else in_channels
-        mlps = [in_channels] + mlps + [num_classes]
+        if mlps is not None:        
+            mlps = [in_channels] + mlps + [num_classes]
+        else:
+            mlps = [in_channels, num_classes]
 
         heads = []
         for i in range(len(mlps) - 2):

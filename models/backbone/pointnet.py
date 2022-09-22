@@ -159,9 +159,9 @@ class PointNetEncoder(nn.Module):
         x = x.view(-1, 1024)
         return x
 
-    def forward_all_features(self, pos, x=None):
+    def forward_seg_feat(self, pos, x=None):
         if hasattr(pos, 'keys'):
-            x = pos['x']
+            x = pos.get('x', None)
         if x is None:
             x = pos.transpose(1, 2).contiguous()
 

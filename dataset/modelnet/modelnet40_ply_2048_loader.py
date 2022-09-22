@@ -148,3 +148,13 @@ class ModelNet40Ply2048(Dataset):
     @property
     def num_classes(self):
         return np.max(self.label) + 1
+
+    """ for visulalization
+    from openpoints.dataset import vis_multi_points
+    import copy
+    old_points = copy.deepcopy(data['pos'])
+    if self.transform is not None:
+        data = self.transform(data)
+    new_points = copy.deepcopy(data['pos'])
+    vis_multi_points([old_points, new_points.numpy()])
+    End of visulization """

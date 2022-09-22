@@ -37,7 +37,7 @@ class PointCloudCenterAndNormalize(object):
     def __init__(self, centering=True,
                  normalize=True,
                  gravity_dim=2,
-                 append_xyz=False, 
+                 append_xyz=False,
                  **kwargs):
         self.centering = centering
         self.normalize = normalize
@@ -49,12 +49,12 @@ class PointCloudCenterAndNormalize(object):
             if self.append_xyz:
                 data['heights'] = data['pos'] - torch.min(data['pos'])
             else:
-                height = data['pos'][:, self.gravity_dim:self.gravity_dim+1]
+                height = data['pos'][:, self.gravity_dim:self.gravity_dim + 1]
                 data['heights'] = height - torch.min(height)
-            
+
             if self.centering:
                 data['pos'] = data['pos'] - torch.mean(data['pos'], axis=0, keepdims=True)
-            
+
             if self.normalize:
                 m = torch.max(torch.sqrt(torch.sum(data['pos'] ** 2, axis=-1, keepdims=True)), axis=0, keepdims=True)[0]
                 data['pos'] = data['pos'] / m
@@ -68,11 +68,12 @@ class PointCloudCenterAndNormalize(object):
 
 
 @DataTransforms.register_module()
-class PointCloudFloorCentering(object):
+class PointCloudXYZAlign(object):
     """Centering the point cloud in the xy plane
     Args:
         object (_type_): _description_
     """
+
     def __init__(self,
                  gravity_dim=2,
                  **kwargs):
@@ -86,7 +87,6 @@ class PointCloudFloorCentering(object):
             data -= torch.mean(data, axis=0, keepdims=True)
             data[:, self.gravity_dim] -= torch.min(data[:, self.gravity_dim])
         return data
-
 
 
 @DataTransforms.register_module()
@@ -134,25 +134,27 @@ class RandomHorizontalFlip(object):
 
 @DataTransforms.register_module()
 class PointCloudScaling(object):
-    def __init__(self, 
-                 scale=[2. / 3, 3. / 2], 
+    def __init__(self,
+                 scale=[2. / 3, 3. / 2],
                  anisotropic=True,
                  scale_xyz=[True, True, True],
-                 symmetries=[0, 0, 0],  # mirror scaling, x --> -x
+                 mirror=[0, 0, 0],  # the possibility of mirroring. set to a negative value to not mirror
                  **kwargs):
         self.scale_min, self.scale_max = np.array(scale).astype(np.float32)
         self.anisotropic = anisotropic
         self.scale_xyz = scale_xyz
-        self.symmetries = torch.from_numpy(np.array(symmetries))
-        
+        self.mirror = torch.from_numpy(np.array(mirror))
+        self.use_mirroring = torch.sum(torch.tensor(self.mirror)>0) != 0
+
     def __call__(self, data):
         device = data['pos'].device if hasattr(data, 'keys') else data.device
         scale = torch.rand(3 if self.anisotropic else 1, dtype=torch.float32, device=device) * (
                 self.scale_max - self.scale_min) + self.scale_min
-        symmetries = torch.round(torch.rand(3, device=device)) * 2 - 1
-        self.symmetries = self.symmetries.to(device)
-        symmetries = symmetries * self.symmetries + (1 - self.symmetries)
-        scale *= symmetries
+        if self.use_mirroring:
+            assert self.anisotropic==True
+            self.mirror = self.mirror.to(device)
+            mirror = (torch.rand(3, device=device) > self.mirror).to(torch.float32) * 2 - 1
+            scale *= mirror
         for i, s in enumerate(self.scale_xyz):
             if not s: scale[i] = 1
         if hasattr(data, 'keys'):
@@ -180,20 +182,30 @@ class PointCloudTranslation(object):
 @DataTransforms.register_module()
 class PointCloudScaleAndTranslate(object):
     def __init__(self, scale=[2. / 3, 3. / 2], scale_xyz=[True, True, True],  # ratio for xyz dimenions
-                 anisotropic=True, 
-                 shift=[0.2, 0.2, 0.2], **kwargs):
+                 anisotropic=True,
+                 shift=[0.2, 0.2, 0.2],
+                 mirror=[0, 0, 0],  # the possibility of mirroring. set to a negative value to not mirror
+                 **kwargs):
         self.scale_min, self.scale_max = np.array(scale).astype(np.float32)
         self.shift = torch.from_numpy(np.array(shift)).to(torch.float32)
         self.scale_xyz = scale_xyz
         self.anisotropic = anisotropic
-        
+        self.mirror = torch.from_numpy(np.array(mirror))
+        self.use_mirroring = torch.sum(self.mirror>0) != 0
+
     def __call__(self, data):
         device = data['pos'].device if hasattr(data, 'keys') else data.device
         scale = torch.rand(3 if self.anisotropic else 1, dtype=torch.float32, device=device) * (
                 self.scale_max - self.scale_min) + self.scale_min
+        # * note : scale_xyz has higher priority than mirror
+        if self.use_mirroring:
+            assert self.anisotropic==True
+            self.mirror = self.mirror.to(device)
+            mirror = (torch.rand(3, device=device) > self.mirror).to(torch.float32) * 2 - 1
+            scale *= mirror
         for i, s in enumerate(self.scale_xyz):
             if not s: scale[i] = 1
-        translation = (torch.rand(3, dtype=torch.float32, device=device) -0.5) * 2  * self.shift.to(device)
+        translation = (torch.rand(3, dtype=torch.float32, device=device) - 0.5) * 2 * self.shift.to(device)
         if hasattr(data, 'keys'):
             data['pos'] = torch.mul(data['pos'], scale) + translation
         else:
@@ -224,26 +236,25 @@ class PointCloudScaleAndJitter(object):
                  scale_xyz=[True, True, True],  # ratio for xyz dimenions
                  anisotropic=True,  # scaling in different ratios for x, y, z
                  jitter_sigma=0.01, jitter_clip=0.05,
-                 symmetries=[0, 0, 0],  # mirror scaling, x --> -x
+                 mirror=[0, 0, 0],  # mirror scaling, x --> -x
                  **kwargs):
         self.scale_min, self.scale_max = np.array(scale).astype(np.float32)
         self.scale_xyz = scale_xyz
         self.noise_std = jitter_sigma
         self.noise_clip = jitter_clip
         self.anisotropic = anisotropic
-        self.symmetries = torch.from_numpy(np.array(symmetries))
+        self.mirror = torch.from_numpy(np.array(mirror))
 
     def __call__(self, data):
         device = data['pos'].device if hasattr(data, 'keys') else data.device
         scale = torch.rand(3 if self.anisotropic else 1, dtype=torch.float32, device=device) * (
                 self.scale_max - self.scale_min) + self.scale_min
-        symmetries = torch.round(torch.rand(3, device=device)) * 2 - 1
-        self.symmetries = self.symmetries.to(device)
-        symmetries = symmetries * self.symmetries + (1 - self.symmetries)
-        scale *= symmetries
+        mirror = torch.round(torch.rand(3, device=device)) * 2 - 1
+        self.mirror = self.mirror.to(device)
+        mirror = mirror * self.mirror + (1 - self.mirror)
+        scale *= mirror
         for i, s in enumerate(self.scale_xyz):
             if not s: scale[i] = 1
-        # print(scale)
         if hasattr(data, 'keys'):
             noise = (torch.randn_like(data['pos']) * self.noise_std).clamp_(-self.noise_clip, self.noise_clip)
             data['pos'] = torch.mul(data['pos'], scale) + noise
@@ -365,8 +376,7 @@ class ChromaticDropGPU(object):
         self.color_drop = color_drop
 
     def __call__(self, data):
-        colors_drop = torch.rand(1) < self.color_drop
-        if colors_drop:
+        if torch.rand(1) < self.color_drop:
             data['x'][:, :3] = 0
         return data
 
@@ -392,7 +402,6 @@ class ChromaticNormalize(object):
         self.color_std = torch.from_numpy(np.array(color_std)).to(torch.float32)
 
     def __call__(self, data):
-
         device = data['x'].device
         if data['x'][:, :3].max() > 1:
             data['x'][:, :3] /= 255.
@@ -403,7 +412,6 @@ class ChromaticNormalize(object):
 def one_hot(x, num_classes, on_value=1., off_value=0., device='cuda'):
     x = x.long().view(-1, 1)
     return torch.full((x.size()[0], num_classes), off_value, device=device).scatter_(1, x, on_value)
-
 
 
 def mixup_target(target, num_classes, lam=1., smoothing=0.0, device='cuda'):
@@ -423,7 +431,8 @@ class Cutmix:
         label_smoothing (float): apply label smoothing to the mixed target tensor
         num_classes (int): number of classes for target
     """
-    def __init__(self, cutmix_alpha=0.3, prob=1.0, 
+
+    def __init__(self, cutmix_alpha=0.3, prob=1.0,
                  label_smoothing=0.1, num_classes=1000):
         self.cutmix_alpha = cutmix_alpha
         self.mix_prob = prob
@@ -433,12 +442,12 @@ class Cutmix:
     def _mix_batch(self, data):
         lam = np.random.beta(self.cutmix_alpha, self.cutmix_alpha)
         # the trianing batches should have same size. 
-        if hasattr(data, 'keys'): # data is a dict
+        if hasattr(data, 'keys'):  # data is a dict
             # pos, feat? 
             N = data['pos'].shape[1]
             n_mix = int(N * lam)
             data['pos'][:, -n_mix:] = data['pos'].flip(0)[:, -n_mix:]
-            
+
             if 'x' in data.keys():
                 data['x'][:, :, -n_mix:] = data['x'].flip(0)[:, :, -n_mix:]
         else:
@@ -451,6 +460,33 @@ class Cutmix:
         target = mixup_target(target, self.num_classes, lam, self.label_smoothing, device)
         return data, target
 
+
+# from roi_align import CropAndResize  # crop_and_resize module
+# from math import sqrt
+#
+#
+# @DataTransforms.register_module()
+# class Zoom(object):
+#     def __init__(self, ratio=0.35, IMG_MEAN=0.044471418750000005, IMG_VAR=0.061778141, resolution=128, views=6,
+#                  **kwargs):  # simple view hyper params
+#         # super().__init__()
+#         self.ratio = ratio
+#         self.extrapolation_value = ((0 - IMG_MEAN) / sqrt(IMG_VAR))
+#         self.resolution = resolution
+#         self.CropAndResize = CropAndResize(resolution, resolution, self.extrapolation_value)
+#         # self.batch = resolution * views
+#
+#     def __call__(self, data, batch):
+#         if self.extrapolation_value == 0:
+#             print("WARNING: using 0 for the extrapolated value")
+#         boxes = torch.cat((torch.zeros((batch, 2), device=data.device, dtype=torch.float32),
+#                            torch.ones((batch, 2), device=data.device, dtype=torch.float32)), dim=1)
+#         ind = torch.arange(batch, device=data.device, dtype=torch.int)
+#         num = (torch.rand((batch, 4), device=data.device) - 0.5) * 2 * self.ratio
+#         boxes = torch.add(boxes, num)
+#         return self.CropAndResize(
+#             data, boxes=boxes, box_ind=ind
+#         )
 
 
 # # # Numpy Operation

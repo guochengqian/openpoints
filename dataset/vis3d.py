@@ -154,14 +154,3 @@ def write_obj(points, colors, out_filename):
 def read_obj(filename):
     values = np.loadtxt(filename, usecols=(1,2,3,4,5,6))
     return values[:, :3], values[:, 3:6]
-    # # make it faster...
-    # for line in open(filename, "r"):
-    #     if line.startswith('#'): continue
-    #     values = line.split()
-    #     if not values: continue
-    #     if values[0] == 'v':
-    #         v = list(map(float, values[1:4]))
-    #         c = list(map(float, values[4:7]))
-    #         points.append(v)
-    #         colors.append(c)
-    # return np.array(points), np.array(colors)

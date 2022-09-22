@@ -49,7 +49,9 @@ class AverageMeter(object):
 
 
 class ConfusionMatrix:
-    """Accumulate a confusion matrix for a classification task."""
+    """Accumulate a confusion matrix for a classification task.
+    ignore_index only supports index <0, or > num_classes 
+    """
 
     def __init__(self, num_classes, ignore_index=None):
         self.value = 0
@@ -64,8 +66,8 @@ class ConfusionMatrix:
         pred = pred.flatten()
         if self.ignore_index is not None:
             if (true == self.ignore_index).sum() > 0:
-                pred[true == self.ignore_index] = self.virtual_num_classes -1 
-                true[true == self.ignore_index] = self.virtual_num_classes -1  
+                pred[true == self.ignore_index] = self.virtual_num_classes -1
+                true[true == self.ignore_index] = self.virtual_num_classes -1
         unique_mapping = true.flatten() * self.virtual_num_classes + pred.flatten()
         bins = torch.bincount(unique_mapping, minlength=self.virtual_num_classes**2)
         self.value += bins.view(self.virtual_num_classes, self.virtual_num_classes)[:self.num_classes, :self.num_classes]
@@ -165,8 +167,8 @@ class ConfusionMatrix:
 
 
 def get_mious(tp, union, count):
-    iou_per_cls = tp / union.clamp(min=1) * 100
-    acc_per_cls = tp / count.clamp(min=1) * 100 
+    iou_per_cls = (tp + 1e-10) / (union + 1e-10) * 100
+    acc_per_cls = (tp + 1e-10) / (count + 1e-10) * 100 
     over_all_acc = tp.sum() / count.sum() * 100
 
     miou = torch.mean(iou_per_cls)

@@ -41,7 +41,9 @@ class S3DIS(Dataset):
                    'board':       [200, 200, 200],
                    'clutter':     [50, 50, 50]}
     cmap = [*class2color.values()]
+    gravity_dim = 1 
     """S3DIS dataset, loading the subsampled entire room as input without block/sphere subsampling.
+    number of points per room in average, median, and std: (794855.5, 1005913.0147058824, 939501.4733064277)
     Args:
         data_root (str, optional): Defaults to 'data/S3DIS/s3disfull'.
         test_area (int, optional): Defaults to 5.
@@ -52,7 +54,6 @@ class S3DIS(Dataset):
         loop (int, optional): split loops for each epoch. Defaults to 1.
         presample (bool, optional): wheter to downsample each point cloud before training. Set to False to downsample on-the-fly. Defaults to False.
         variable (bool, optional): where to use the original number of points. The number of point per point cloud is variable. Defaults to False.
-        n_shifted (int, optional): the number of shifted coordinates to be used. Defaults to 1 to use the height.
     """
     def __init__(self,
                  data_root: str = 'data/S3DIS/s3disfull',
@@ -64,7 +65,7 @@ class S3DIS(Dataset):
                  loop: int = 1,
                  presample: bool = False,
                  variable: bool = False,
-                 n_shifted: int = 1
+                 shuffle: bool = True,
                  ):
 
         super().__init__()
@@ -72,7 +73,7 @@ class S3DIS(Dataset):
             split, voxel_size, transform, voxel_max, loop
         self.presample = presample
         self.variable = variable
-        self.n_shifted = n_shifted
+        self.shuffle = shuffle 
 
         raw_root = os.path.join(data_root, 'raw')
         self.raw_root = raw_root
@@ -87,7 +88,7 @@ class S3DIS(Dataset):
 
         processed_root = os.path.join(data_root, 'processed')
         filename = os.path.join(
-            processed_root, f's3dis_{split}_area{test_area}_{voxel_size:.3f}.pkl')
+            processed_root, f's3dis_{split}_area{test_area}_{voxel_size:.3f}_{str(voxel_max)}.pkl')
         if presample and not os.path.exists(filename):
             np.random.seed(0)
             self.data = []
@@ -128,19 +129,21 @@ class S3DIS(Dataset):
             coord, feat, label = cdata[:, :3], cdata[:, 3:6], cdata[:, 6:7]
             coord, feat, label = crop_pc(
                 coord, feat, label, self.split, self.voxel_size, self.voxel_max,
-                downsample=not self.presample, variable=self.variable)
-
+                downsample=not self.presample, variable=self.variable, shuffle=self.shuffle)
+            # TODO: do we need to -np.min in cropped data?
         label = label.squeeze(-1).astype(np.long)
         data = {'pos': coord, 'x': feat, 'y': label}
         # pre-process.
         if self.transform is not None:
             data = self.transform(data)
-        data['x'] = torch.cat((data['x'], torch.from_numpy(
-            coord[:, 3-self.n_shifted:3].astype(np.float32))), dim=-1)
+            
+        if 'heights' not in data.keys():
+            data['heights'] =  torch.from_numpy(coord[:, self.gravity_dim:self.gravity_dim+1].astype(np.float32))
         return data
 
     def __len__(self):
         return len(self.data_idx) * self.loop
+        # return 1   # debug
 
 
 """debug 

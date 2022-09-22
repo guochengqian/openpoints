@@ -63,7 +63,9 @@ class LayerDecayValueAssigner(object):
         return get_num_layer_for_vit(var_name, len(self.values))
 
 
-def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None):
+def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=None, get_layer_scale=None, 
+                         filter_by_modules_names=None, 
+                         ):
     parameter_group_names = {}
     parameter_group_vars = {}
 
@@ -83,13 +85,24 @@ def get_parameter_groups(model, weight_decay=1e-5, skip_list=(), get_num_layer=N
             group_name = "layer_%d_%s" % (layer_id, group_name)
         else:
             layer_id = None
+        
+        if get_layer_scale is not None:
+            scale = get_layer_scale(layer_id) * scale
+        else:
+            scale = 1.0
+        
+        if filter_by_modules_names is not None:
+            filter_exist = False 
+            for module_name in filter_by_modules_names.keys():
+                filter_exist = module_name in name
+                if filter_exist:
+                    break 
+            if filter_exist:
+                group_name = module_name + '_' + group_name
+                this_weight_decay = filter_by_modules_names[module_name].get('weight_decay', this_weight_decay)
+                scale = filter_by_modules_names[module_name].get('lr_scale', 1.0) * scale
 
         if group_name not in parameter_group_names:
-            if get_layer_scale is not None:
-                scale = get_layer_scale(layer_id)
-            else:
-                scale = 1.
-
             parameter_group_names[group_name] = {
                 "weight_decay": this_weight_decay,
                 "params": [],
@@ -147,6 +160,7 @@ def build_optimizer_from_cfg(
         weight_decay: float = 0.,
         momentum: float = 0.9,
         filter_bias_and_bn: bool = True,
+        filter_by_modules_names=None, 
         **kwargs):
     """ Create an optimizer.
     Args:
@@ -181,7 +195,9 @@ def build_optimizer_from_cfg(
         else:
             if hasattr(model, 'no_weight_decay'):
                 skip = model.module.no_weight_decay()
-        parameters = get_parameter_groups(model, weight_decay, skip, get_num_layer, get_layer_scale)
+        parameters = get_parameter_groups(model, weight_decay, skip, get_num_layer, get_layer_scale, 
+                                          filter_by_modules_names
+                                          )
         weight_decay = 0.
     else:
         parameters = model.parameters()

@@ -5,12 +5,26 @@ import numpy as np
 import torch
 from easydict import EasyDict as edict
 from openpoints.utils import registry
-# from torch_geometric.loader.dataloader import Collater as Collater_PyG
-# pyg_variable_concat = Collater_PyG(None, None)
 from openpoints.transforms import build_transforms_from_cfg
 
-
 DATASETS = registry.Registry('dataset')
+
+
+def concat_collate_fn(datas):
+    """collate fn for point transformer
+    """
+    pts, feats, labels, offset, count, batches = [], [], [], [], 0, []
+    for i, data in enumerate(datas):
+        count += len(data['pos'])
+        offset.append(count)
+        pts.append(data['pos'])
+        feats.append(data['x'])
+        labels.append(data['y'])
+        batches += [i] *len(data['pos'])
+        
+    data = {'pos': torch.cat(pts), 'x': torch.cat(feats), 'y': torch.cat(labels),
+            'o': torch.IntTensor(offset), 'batch': torch.LongTensor(batches)}
+    return data
 
 
 def build_dataset_from_cfg(cfg, default_args=None):

@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from .point_transformer_gpu import DataTransforms
+from scipy.linalg import expm, norm
 
 
 @DataTransforms.register_module()
@@ -8,15 +9,13 @@ class PointsToTensor(object):
     def __init__(self, **kwargs):
         pass
 
-    def __call__(self, data):  
+    def __call__(self, data):
         keys = data.keys() if callable(data.keys) else data.keys
         for key in keys:
             if not torch.is_tensor(data[key]):
+                if str(data[key].dtype) == 'float64':
+                    data[key] = data[key].astype(np.float32)
                 data[key] = torch.from_numpy(np.array(data[key]))
-            # if key in ['y', 'label', 'labels', 'ind','indices', 'cls']: 
-            #     data[key] = data[key].to(torch.long)
-            # else:
-            #     data[key] = data[key].to(torch.float32)
         return data
 
 
@@ -41,14 +40,91 @@ class RandomRotate(object):
 
 
 @DataTransforms.register_module()
+class RandomRotateZ(object):
+    def __init__(self, angle=1.0, rotate_dim=2, random_rotate=True, **kwargs):
+        self.angle = angle * np.pi
+        self.random_rotate = random_rotate
+        axis = np.zeros(3)
+        axis[rotate_dim] = 1
+        self.axis = axis
+        self.rotate_dim = rotate_dim
+
+    @staticmethod
+    def M(axis, theta):
+        return expm(np.cross(np.eye(3), axis / norm(axis) * theta))
+
+    def __call__(self, data):
+        if self.random_rotate:
+            rotate_angle = np.random.uniform(-self.angle, self.angle)
+        else:
+            rotate_angle = self.angle
+        R = self.M(self.axis, rotate_angle)
+        data['pos'] = np.dot(data['pos'], R)  # anti clockwise
+        return data
+
+    def __repr__(self):
+        return 'RandomRotate(rotate_angle: {}, along_z: {})'.format(self.rotate_angle, self.along_z)
+
+
+@DataTransforms.register_module()
 class RandomScale(object):
-    def __init__(self, scale=[0.9, 1.1], anisotropic=False, **kwargs):
+    def __init__(self, scale=[0.8, 1.2],
+                 scale_anisotropic=False,
+                 scale_xyz=[True, True, True],
+                 mirror=[-1, -1, -1],  # the possibility of mirroring. set to a negative value to not mirror
+                 **kwargs):
         self.scale = scale
-        self.anisotropic = anisotropic
+        self.scale_xyz = scale_xyz
+        self.anisotropic = scale_anisotropic
+        self.mirror = np.array(mirror)
+        self.use_mirroring = np.sum(self.mirror > 0) != 0
 
     def __call__(self, data):
         scale = np.random.uniform(self.scale[0], self.scale[1], 3 if self.anisotropic else 1)
+        if len(scale) == 1:
+            scale = scale.repeat(3)
+        if self.use_mirroring:
+            mirror = (np.random.rand(3) > self.mirror).astype(np.float32) * 2 - 1
+            scale *= mirror
+        for i, s in enumerate(self.scale_xyz):
+            if not s: scale[i] = 1
         data['pos'] *= scale
+        return data
+
+    def __repr__(self):
+        return 'RandomScale(scale_low: {}, scale_high: {})'.format(self.scale_min, self.scale_max)
+
+
+@DataTransforms.register_module()
+class RandomScaleAndJitter(object):
+    def __init__(self,
+                 scale=[0.8, 1.2],
+                 scale_xyz=[True, True, True],  # ratio for xyz dimenions
+                 scale_anisotropic=False,  # scaling in different ratios for x, y, z
+                 jitter_sigma=0.01, jitter_clip=0.05,
+                 mirror=[-1, -1, -1],  # the possibility of mirroring. set to a negative value to not mirror
+                 **kwargs):
+        self.scale = scale
+        self.scale_min, self.scale_max = np.array(scale).astype(np.float32)
+        self.scale_xyz = scale_xyz
+        self.noise_sigma = jitter_sigma
+        self.noise_clip = jitter_clip
+        self.anisotropic = scale_anisotropic
+        self.mirror = np.array(mirror)
+        self.use_mirroring = np.sum(self.mirror > 0) != 0
+
+    def __call__(self, data):
+        scale = np.random.uniform(self.scale[0], self.scale[1], 3 if self.anisotropic else 1)
+
+        if len(scale) == 1:
+            scale = scale.repeat(3)
+        if self.use_mirroring:
+            mirror = (np.random.rand(3) > self.mirror).astype(np.float32) * 2 - 1
+            scale *= mirror
+        for i, s in enumerate(self.scale_xyz):
+            if not s: scale[i] = 1
+        jitter = np.clip(self.noise_sigma * np.random.randn(data['pos'].shape[0], 3), -self.noise_clip, self.noise_clip)
+        data['pos'] = data['pos'] * scale + jitter
         return data
 
 
@@ -58,11 +134,12 @@ class RandomShift(object):
         self.shift = shift
 
     def __call__(self, data):
-        shift_x = np.random.uniform(-self.shift[0], self.shift[0])
-        shift_y = np.random.uniform(-self.shift[1], self.shift[1])
-        shift_z = np.random.uniform(-self.shift[2], self.shift[2])
-        data['pos'] += [shift_x, shift_y, shift_z]
+        shift = np.random.uniform(-self.shift_range, self.shift_range, 3)
+        data['pos'] += shift
         return data
+
+    def __repr__(self):
+        return 'RandomShift(shift_range: {})'.format(self.shift_range)
 
 
 @DataTransforms.register_module()
@@ -80,11 +157,9 @@ class RandomScaleAndTranslate(object):
         scale = np.random.uniform(self.scale[0], self.scale[1], 3 if self.anisotropic else 1)
         scale *= self.scale_xyz
 
-        shift_x = np.random.uniform(-self.shift[0], self.shift[0])
-        shift_y = np.random.uniform(-self.shift[1], self.shift[1])
-        shift_z = np.random.uniform(-self.shift[2], self.shift[2])
-        data['pos'] = np.add(np.multiply(data['pos'], scale), [shift_x, shift_y, shift_z])
-        
+        shift = np.random.uniform(-self.shift_range, self.shift_range, 3)
+        data['pos'] = np.add(np.multiply(data['pos'], scale), shift)
+
         return data
 
 
@@ -104,11 +179,11 @@ class RandomFlip(object):
 @DataTransforms.register_module()
 class RandomJitter(object):
     def __init__(self, jitter_sigma=0.01, jitter_clip=0.05, **kwargs):
-        self.sigma = jitter_sigma
-        self.clip = jitter_clip
+        self.noise_sigma = jitter_sigma
+        self.noise_clip = jitter_clip
 
     def __call__(self, data):
-        jitter = np.clip(self.sigma * np.random.randn(data['pos'].shape[0], 3), -1 * self.clip, self.clip)
+        jitter = np.clip(self.noise_sigma * np.random.randn(data['pos'].shape[0], 3), -self.noise_clip, self.noise_clip)
         data['pos'] += jitter
         return data
 
@@ -184,7 +259,7 @@ class HueSaturationTranslation(object):
         rc[mask] = (maxc - r)[mask] / (maxc - minc)[mask]
         gc[mask] = (maxc - g)[mask] / (maxc - minc)[mask]
         bc[mask] = (maxc - b)[mask] / (maxc - minc)[mask]
-        
+
         hsv[..., 0] = np.select([r == maxc, g == maxc], [bc - gc, 2.0 + rc - bc], default=4.0 + gc - rc)
         hsv[..., 0] = (hsv[..., 0] / 6.0) % 1.0
         return hsv
@@ -226,11 +301,32 @@ class HueSaturationTranslation(object):
 
 
 @DataTransforms.register_module()
-class RandomDropColor(object):
-    def __init__(self, color_drop=0.2, **kwargs):
-        self.p = color_drop
+class RandomDropFeature(object):
+    def __init__(self, feature_drop=0.2,
+                 drop_dim=[0, 3],
+                 **kwargs):
+        self.p = feature_drop
+        self.dim = drop_dim
 
     def __call__(self, data):
         if np.random.rand() < self.p:
-            data['x'][:, :3] = 0
+            data['x'][:, self.dim[0]:self.dim[-1]] = 0
+        return data
+
+
+@DataTransforms.register_module()
+class NumpyChromaticNormalize(object):
+    def __init__(self,
+                 color_mean=None,
+                 color_std=None,
+                 **kwargs):
+
+        self.color_mean = np.array(color_mean).astype(np.float32) if color_mean is not None else None
+        self.color_std = np.array(color_std).astype(np.float32) if color_std is not None else None
+
+    def __call__(self, data):
+        if data['x'][:, :3].max() > 1:
+            data['x'][:, :3] /= 255.
+        if self.color_mean is not None:
+            data['x'][:, :3] = (data['x'][:, :3] - self.color_mean) / self.color_std
         return data

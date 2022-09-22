@@ -106,7 +106,7 @@ class DeepGCN(nn.Module):
                 nn.init.constant_(m.bias, 0)
                 nn.init.constant_(m.weight, 1.0)
                 
-    def forward_all_features(self, pts, features=None):
+    def forward_seg_feat(self, pts, features=None):
         fusion = self.forward(pts, features)
         return pts, fusion
     

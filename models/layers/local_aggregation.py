@@ -5,12 +5,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
+# from ..backbone.pointnext import get_aggregation_feautres
 from .conv import create_convblock2d, create_convblock1d
 from .activation import create_act
 from .group import create_grouper
 
 CHANNEL_MAP = {
     'fj': lambda x: x,
+    'df': lambda x: x,
     'assa': lambda x: x * 3,
     'assa_dp': lambda x: x * 3 + 3,
     'dp_fj': lambda x: 3 + x,
@@ -20,8 +22,29 @@ CHANNEL_MAP = {
     'pj_dp': lambda x: x + 3,
     'dp_fj_df': lambda x: x*2 + 3,
     'dp_fi_df': lambda x: x*2 + 3,
+    'pi_dp_fj_df': lambda x: x*2 + 6,
+    'pj_dp_fj_df': lambda x: x*2 + 6,
+    'pj_dp_df': lambda x: x + 6,
     'dp_df': lambda x: x + 3,
 }
+
+def get_aggregation_feautres(p, pj, dp, f, fj, feature_type='dp_fj'):
+    if feature_type == 'dp_fj':
+        fj = torch.cat([dp, fj], 1)
+    elif feature_type == 'dp_fj_df':
+        df = fj - f.unsqueeze(-1)
+        fj = torch.cat([dp, fj, df], 1)
+    elif feature_type == 'pi_dp_fj_df':
+        df = fj - f.unsqueeze(-1)
+        fj = torch.cat([p.transpose(1, 2).unsqueeze(-1).expand(-1, -1, -1, df.shape[-1]), dp, fj, df], 1)
+    elif feature_type == 'pj_dp_fj_df':
+        df = fj - f.unsqueeze(-1)
+        fj = torch.cat([pj, dp, fj, df], 1)
+    elif feature_type == 'dp_df':
+        df = fj - f.unsqueeze(-1)
+        fj = torch.cat([dp, df], 1)
+    return fj
+
 
 
 class ASSA(nn.Module):
@@ -113,7 +136,7 @@ class ASSA(nn.Module):
         features = self.convs[:self.num_preconv](features)
         
         # grouping 
-        dp, fj = self.grouper(query_xyz, support_xyz, features)
+        _, dp, fj = self.grouper(query_xyz, support_xyz, features)
         if self.use_res and query_idx is not None:
             features = torch.gather(
                 features, -1, query_idx.unsqueeze(1).expand(-1, features.shape[1], -1))
@@ -204,7 +227,7 @@ class ConvPool(nn.Module):
         Returns:
            output features of query points: [B, C_out, 3]
         """
-        dp, fj = self.grouper(query_xyz, support_xyz, features)
+        pj, dp, fj = self.grouper(query_xyz, support_xyz, features)
 
         neighbor_dim = 3
         if 'df' in self.feature_type or self.use_res:
@@ -229,17 +252,7 @@ class ConvPool(nn.Module):
         #     points = len(dist[dist < radius]) / (dist.shape[0] * dist.shape[1])
         #     print(f'query size: {query_xyz.shape}, support size: {support_xyz.shape}, radius: {radius}, num_neighbors: {points}')
         # """End of debug"""
-        if self.feature_type == 'dp_fj':
-            fj = torch.cat([dp, fj], 1)
-        elif self.feature_type == 'dp_fj_df':
-            df = fj - features.unsqueeze(neighbor_dim)
-            fj = torch.cat([dp, fj, df], 1)
-        elif self.feature_type == 'dp_fi_df':
-            df = fj - features.unsqueeze(neighbor_dim)
-            repeats = [1, 1, 1, 1]
-            repeats[neighbor_dim] = df.shape[neighbor_dim]
-            fj = torch.cat(
-                [features.unsqueeze(neighbor_dim).repeat(*repeats), df, dp], 1)
+        fj = get_aggregation_feautres(query_xyz, pj, dp, features, fj, feature_type=self.feature_type)
         out_features = self.reduction_layer(self.convs(fj))
 
         if self.use_res:

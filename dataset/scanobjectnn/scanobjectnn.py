@@ -88,6 +88,7 @@ class ScanObjectNNHardest(Dataset):
             data = self.transform(data)
 
         # height appending. @KPConv
+        # TODO: remove pos here, and only use heights. 
         if 'heights' in data.keys():
             data['x'] = torch.cat((data['pos'], data['heights']), dim=1)
         else:

@@ -131,13 +131,10 @@ def generate_exp_directory(cfg,
     cfg.exp_dir = cfg.run_dir
     cfg.log_dir = cfg.run_dir
     cfg.ckpt_dir = os.path.join(cfg.run_dir, 'checkpoint')
-    cfg.code_dir = os.path.join(cfg.run_dir, 'code')
     cfg.log_path = os.path.join(cfg.run_dir, cfg.run_name + '.log')
 
     if cfg.get('rank', 0) == 0:
         pathlib.Path(cfg.ckpt_dir).mkdir(parents=True, exist_ok=True)
-        pathlib.Path(cfg.code_dir).mkdir(parents=True, exist_ok=True)
-        shutil.copytree('openpoints', osp.join(cfg.code_dir, 'openpoints'))
 
 
 def resume_exp_directory(cfg, pretrained_path=None):

@@ -236,7 +236,6 @@ class PTSeg(nn.Module):
             block = eval(block)
         self.mid_res = mid_res
         self.dec_local_aggr = dec_local_aggr
-
         self.enc1 = self._make_enc(block, planes[0], blocks[0], share_planes, stride=stride[0],
                                    nsample=nsample[0])  # N/1
         self.enc2 = self._make_enc(block, planes[1], blocks[1], share_planes, stride=stride[1],
@@ -248,7 +247,6 @@ class PTSeg(nn.Module):
         self.enc5 = self._make_enc(block, planes[4], blocks[4], share_planes, stride=stride[4],
                                    nsample=nsample[4])  # N/256
 
-        # dec 5, no interpolation
         self.dec5 = self._make_dec(block, planes[4], 2, share_planes, nsample[4], True)  # transform p5
         self.dec4 = self._make_dec(block, planes[3], 2, share_planes, nsample[3])  # fusion p5 and p4
         self.dec3 = self._make_dec(block, planes[2], 2, share_planes, nsample[2])  # fusion p4 and p3
