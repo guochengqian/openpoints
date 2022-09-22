@@ -248,17 +248,11 @@ class QueryAndGroup(nn.Module):
         xyz_trans = support_xyz.transpose(1, 2).contiguous()
         grouped_xyz = grouping_operation(xyz_trans, idx)  # (B, 3, npoint, nsample)
         if self.relative_xyz:
-            relative_xyz = grouped_xyz - query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
+            grouped_xyz = grouped_xyz - query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
             if self.normalize_dp:
-                relative_xyz /= self.radius
-        else:
-            relative_xyz = None
-
-        if features is not None:
-            grouped_features = grouping_operation(features, idx)
-            return grouped_xyz, relative_xyz, grouped_features
-        else:
-            return grouped_xyz, relative_xyz, None
+                grouped_xyz /= self.radius
+        grouped_features = grouping_operation(features, idx) if features is not None else None
+        return grouped_xyz, grouped_features
 
 
 class GroupAll(nn.Module):
@@ -274,11 +268,8 @@ class GroupAll(nn.Module):
             new_features: (B, C + 3, 1, N)
         """
         grouped_xyz = xyz.transpose(1, 2).unsqueeze(2)
-        if features is not None:
-            grouped_features = features.unsqueeze(2)
-            return grouped_xyz, grouped_features
-        else:
-            return grouped_xyz, None
+        grouped_features = features.unsqueeze(2) if features is not None else None
+        return grouped_xyz, grouped_features
 
 
 class KNNGroup(nn.Module):

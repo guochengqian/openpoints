@@ -24,7 +24,7 @@ def get_reduction_fn(reduction):
     return pool
 
 
-def get_aggregation_feautres(p, pj, dp, f, fj, feature_type='dp_fj'):
+def get_aggregation_feautres(p, dp, f, fj, feature_type='dp_fj'):
     if feature_type == 'dp_fj':
         fj = torch.cat([dp, fj], 1)
     elif feature_type == 'dp_fj_df':
@@ -33,12 +33,6 @@ def get_aggregation_feautres(p, pj, dp, f, fj, feature_type='dp_fj'):
     elif feature_type == 'pi_dp_fj_df':
         df = fj - f.unsqueeze(-1)
         fj = torch.cat([p.transpose(1, 2).unsqueeze(-1).expand(-1, -1, -1, df.shape[-1]), dp, fj, df], 1)
-    elif feature_type == 'pj_dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([pj, dp, fj, df], 1)
-    elif feature_type == 'pj_dp_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([pj, dp, df], 1)
     elif feature_type == 'dp_df':
         df = fj - f.unsqueeze(-1)
         fj = torch.cat([dp, df], 1)
@@ -84,8 +78,8 @@ class LocalAggregation(nn.Module):
         # p: position, f: feature
         p, f = pf
         # neighborhood_features
-        pj, dp, fj = self.grouper(p, p, f)
-        fj = get_aggregation_feautres(p, pj, dp, f, fj, self.feature_type)
+        dp, fj = self.grouper(p, p, f)
+        fj = get_aggregation_feautres(p, dp, f, fj, self.feature_type)
         f = self.pool(self.convs(fj))
         """ DEBUG neighbor numbers. 
         if f.shape[-1] != 1:
@@ -182,8 +176,8 @@ class SetAbstraction(nn.Module):
                     identity = self.skipconv(fi)
             else:
                 fi = None
-            pj, dp, fj = self.grouper(new_p, p, f)
-            fj = get_aggregation_feautres(new_p, pj, dp, fi, fj, feature_type=self.feature_type)
+            dp, fj = self.grouper(new_p, p, f)
+            fj = get_aggregation_feautres(new_p, dp, fi, fj, feature_type=self.feature_type)
             f = self.pool(self.convs(fj))
             if self.use_res:
                 f = self.act(f + identity)

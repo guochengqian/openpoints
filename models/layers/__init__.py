@@ -6,7 +6,7 @@ from .activation import create_act
 from .mlp import Mlp, GluMlp, GatedMlp, ConvMlp
 from .conv import *
 from .knn import knn_point, KNN, DilatedKNN
-from .group_embed import SubsampleGroup, PointPatchEmbed, GroupEmbed, PointTransformerEmbed
+from .group_embed import SubsampleGroup, PointPatchEmbed
 from .group import torch_grouping_operation, grouping_operation, gather_operation, create_grouper
 from .subsample import random_sample, furthest_point_sample, fps # grid_subsampling
 from .upsampling import three_interpolate, three_nn, three_interpolation

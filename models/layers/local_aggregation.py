@@ -28,7 +28,7 @@ CHANNEL_MAP = {
     'dp_df': lambda x: x + 3,
 }
 
-def get_aggregation_feautres(p, pj, dp, f, fj, feature_type='dp_fj'):
+def get_aggregation_feautres(p, dp, f, fj, feature_type='dp_fj'):
     if feature_type == 'dp_fj':
         fj = torch.cat([dp, fj], 1)
     elif feature_type == 'dp_fj_df':
@@ -37,9 +37,6 @@ def get_aggregation_feautres(p, pj, dp, f, fj, feature_type='dp_fj'):
     elif feature_type == 'pi_dp_fj_df':
         df = fj - f.unsqueeze(-1)
         fj = torch.cat([p.transpose(1, 2).unsqueeze(-1).expand(-1, -1, -1, df.shape[-1]), dp, fj, df], 1)
-    elif feature_type == 'pj_dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([pj, dp, fj, df], 1)
     elif feature_type == 'dp_df':
         df = fj - f.unsqueeze(-1)
         fj = torch.cat([dp, df], 1)
@@ -136,7 +133,7 @@ class ASSA(nn.Module):
         features = self.convs[:self.num_preconv](features)
         
         # grouping 
-        _, dp, fj = self.grouper(query_xyz, support_xyz, features)
+        dp, fj = self.grouper(query_xyz, support_xyz, features)
         if self.use_res and query_idx is not None:
             features = torch.gather(
                 features, -1, query_idx.unsqueeze(1).expand(-1, features.shape[1], -1))
@@ -227,7 +224,7 @@ class ConvPool(nn.Module):
         Returns:
            output features of query points: [B, C_out, 3]
         """
-        pj, dp, fj = self.grouper(query_xyz, support_xyz, features)
+        dp, fj = self.grouper(query_xyz, support_xyz, features)
 
         neighbor_dim = 3
         if 'df' in self.feature_type or self.use_res:
@@ -252,7 +249,7 @@ class ConvPool(nn.Module):
         #     points = len(dist[dist < radius]) / (dist.shape[0] * dist.shape[1])
         #     print(f'query size: {query_xyz.shape}, support size: {support_xyz.shape}, radius: {radius}, num_neighbors: {points}')
         # """End of debug"""
-        fj = get_aggregation_feautres(query_xyz, pj, dp, features, fj, feature_type=self.feature_type)
+        fj = get_aggregation_feautres(query_xyz, dp, features, fj, feature_type=self.feature_type)
         out_features = self.reduction_layer(self.convs(fj))
 
         if self.use_res:
