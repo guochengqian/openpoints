@@ -36,7 +36,7 @@ class PointNetSAModuleMSG(nn.Module):
                  sampler='fps',
                  use_res=False,
                  query_as_support=False,
-                 voxel_size=0.1, 
+                 voxel_size=0.1,
                  **kwargs
                  ):
         super().__init__()

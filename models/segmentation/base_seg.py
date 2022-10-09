@@ -96,25 +96,25 @@ class SegHead(nn.Module):
                  norm_args={'norm': 'bn1d'},
                  act_args={'act': 'relu'},
                  dropout=0.5,
-                 globals=None, 
+                 global_feat=None, 
                  **kwargs
                  ):
         """A scene segmentation head for ResNet backbone.
         Args:
             num_classes: class num.
             in_channles: the base channel num.
-            globals: global features to concat. [max,avg]. Set to None if do not concat any.
+            global_feat: global features to concat. [max,avg]. Set to None if do not concat any.
         Returns:
             logits: (B, num_classes, N)
         """
         super().__init__()
         if kwargs:
             logging.warning(f"kwargs: {kwargs} are not used in {__class__.__name__}")
-        if globals is not None:
-            self.globals = globals.split(',')
-            multiplier = len(self.globals) + 1
+        if global_feat is not None:
+            self.global_feat = global_feat.split(',')
+            multiplier = len(self.global_feat) + 1
         else:
-            self.globals = None
+            self.global_feat = None
             multiplier = 1
         in_channels *= multiplier
         
@@ -136,9 +136,9 @@ class SegHead(nn.Module):
         self.head = nn.Sequential(*heads)
 
     def forward(self, end_points):
-        if self.globals is not None: 
+        if self.global_feat is not None: 
             global_feats = [] 
-            for feat_type in self.globals:
+            for feat_type in self.global_feat:
                 if 'max' in feat_type:
                     global_feats.append(torch.max(end_points, dim=-1, keepdim=True)[0])
                 elif feat_type in ['avg', 'mean']:
