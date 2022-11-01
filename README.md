@@ -2,6 +2,7 @@
 
 OpenPoints is a library built for fairly benchmarking and easily reproducing point-based methods for point cloud understanding. It is born in the course of [PointNeXt](https://github.com/guochengqian/PointNeXt) project and is used as an engine therein.
 
+**For any question related to OpenPoints, please open an issue in [PointNeXt](https://github.com/guochengqian/PointNeXt) repo.**
 
 OpenPoints currently supports reproducing the following models:
 - PointNet
@@ -11,6 +12,7 @@ OpenPoints currently supports reproducing the following models:
 - ASSANet
 - PointMLP
 - PointNeXt
+- Pix4Point
 
 
 
@@ -30,12 +32,6 @@ OpenPoints currently supports reproducing the following models:
 ## Usage
 
 OpenPoints only serves as an engine. Please refer to [PointNeXt](https://github.com/guochengqian/PointNeXt) for a specific example of how to use and install
-
-
-
-## TODO
-- [  ] pip install support
-- [  ] more models
 
 
 
