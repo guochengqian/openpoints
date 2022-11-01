@@ -129,7 +129,7 @@ class GatherOperation(Function):
         return output
 
     @staticmethod
-    def backward(ctx, grad_out):    # todo: understand this part. why needs this backward??
+    def backward(ctx, grad_out):
         idx, C, N = ctx.for_backwards
         B, npoint = idx.size()
 

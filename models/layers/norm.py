@@ -97,26 +97,6 @@ def create_norm(norm_args, channels, dimension=None):
     return norm(channels, **norm_args)
 
 
-# TODO: remove create_norm1d
-def create_norm1d(norm_args, channels):
-    """Build normalization layer.
-    Returns:
-        nn.Module: Created normalization layer.
-    """
-    norm_args_copy = edict(copy.deepcopy(norm_args))
-
-    if norm_args_copy is None or not norm_args_copy:  # Empty or None
-        return None
-
-    norm = norm_args_copy.get('norm', None)
-    if norm is None:
-        return None
-
-    if '1d' not in norm and norm != 'ln':
-        norm_args_copy.norm += '1d'
-    return create_norm(norm_args_copy, channels)
-
-
 if __name__ == "__main__":
     norm_type = 'bn2d'
     from easydict import EasyDict as edict

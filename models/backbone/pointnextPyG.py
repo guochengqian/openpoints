@@ -1,4 +1,6 @@
 """PointNext for inputs with variable sizes.
+
+This file is still under development. DO NOT USE. 
 """
 from re import X
 from typing import List
@@ -147,7 +149,7 @@ class SetAbstraction(nn.Module):
             if sampler.lower() == 'fps':
                 self.sample_fn = fps
             elif sampler.lower() == 'random':
-                self.sample_fn = random_sample  # TODO: here. 
+                self.sample_fn = random_sample 
 
     def forward(self, pxb):
         p, x, b = pxb

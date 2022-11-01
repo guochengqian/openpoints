@@ -132,7 +132,7 @@ class PointTransformer(nn.Module):
 
 
     def forward(self, pts):
-        # divide the point cloud in the same form. This is important! TODO: this is important. 
+        # divide the point cloud in the same form. 
         neighborhood, center = self.group_divider(pts)
         
         # encoder the input cloud blocks

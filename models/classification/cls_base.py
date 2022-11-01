@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import logging
 from typing import List
-from ..layers.norm import create_norm1d
 from ..layers import create_linearblock
 from ...utils import get_missing_parameters_message, get_unexpected_parameters_message
 from ..build import MODELS, build_model_from_cfg

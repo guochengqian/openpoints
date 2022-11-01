@@ -355,8 +355,6 @@ class Upsample(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        # TODO: why here LN? and why Layernorm before linear
-        # TODO: check convnext operations, order of conv, BN.
         self.linear1 = nn.Sequential(nn.LayerNorm(out_channels), nn.Linear(out_channels, out_channels))
         self.linear2 = nn.Sequential(nn.LayerNorm(in_channels), nn.Linear(in_channels, out_channels))
 
@@ -431,7 +429,7 @@ class StratifiedEncoder(nn.Module):
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, sum(depths))]  # stochastic depth decay rule
         self.grid_size = grid_size
         self.sigma = sigma
-        self.max_num_neighbors = k  # TODO:
+        self.max_num_neighbors = k
         patch_size = grid_size * patch_size
         window_size = [patch_size * window_size * (2**i) for i in range(num_layers)]
         grid_sizes = [patch_size * (2**i) for i in range(num_layers)]

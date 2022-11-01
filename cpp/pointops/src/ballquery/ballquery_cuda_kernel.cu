@@ -28,8 +28,6 @@ __global__ void ballquery_cuda_kernel(int m, float radius, int nsample,
                                       const int *__restrict__ offset, const int *__restrict__ new_offset,
                                       int *__restrict__ idx)
 {
-    // TODO: what does __restrict mean?
-
     // input: xyz (n, 3) new_xyz (m, 3) offset new_offset
     // output: idx (m, nsample)
 
@@ -38,7 +36,6 @@ __global__ void ballquery_cuda_kernel(int m, float radius, int nsample,
     if (pt_idx >= m)
         return;
 
-    // TODO: why?. this is just a pointer, not the value it self.
     new_xyz += pt_idx * 3;
     idx += pt_idx * nsample;
 
@@ -92,7 +89,6 @@ void ballquery_launcher(int m, float radius, int nsample,
     dim3 blocks(DIVUP(m, THREADS_PER_BLOCK)); // only 1 dimension. in point dimension, perform multi-threads
     dim3 threads(THREADS_PER_BLOCK);
 
-    // TODO: what does 0 here mean.
     ballquery_cuda_kernel<<<blocks, threads, 0>>>(m, radius, nsample, xyz, new_xyz, offset, new_offset, idx);
     // cudaDeviceSynchronize();  // for using printf in kernel function
     err = cudaGetLastError();

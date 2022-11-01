@@ -59,13 +59,12 @@ class ViTGraph(nn.Module):
             self.group_embed = GroupEmbed(in_chans=in_chans, **embed_args)
         elif self.embed_layer == 'kmeans':
             self.group_embed = KMeansEmbed(**embed_args)
-        # elif embed_layer == 'voxel': # TODO: voxel embedding here.
         
         self.proj_layer = nn.Linear(embed_args.embed_dim, self.encoder_dim)
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, self.encoder_dim))
         self.cls_pos = nn.Parameter(torch.randn(1, 1, self.encoder_dim))
-        self.pos_embed = nn.Sequential(  # TODO: try different
+        self.pos_embed = nn.Sequential(
             create_linearblock(3, 128, norm_args=posembed_norm_args, act_args=act_args), 
             nn.Linear(128, self.encoder_dim)
         )

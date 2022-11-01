@@ -201,7 +201,6 @@ def build_optimizer_from_cfg(
         weight_decay = 0.
     else:
         parameters = model.parameters()
-    # TODO: Here. split encoder out? How.  
 
     opt_lower = NAME.lower()
     opt_split = opt_lower.split('_')
