@@ -41,7 +41,7 @@ class S3DIS(Dataset):
                    'board':       [200, 200, 200],
                    'clutter':     [50, 50, 50]}
     cmap = [*class2color.values()]
-    gravity_dim = 1 # TODO: BUG!!! should be 2 
+    gravity_dim = 2
     """S3DIS dataset, loading the subsampled entire room as input without block/sphere subsampling.
     number of points per room in average, median, and std: (794855.5, 1005913.0147058824, 939501.4733064277)
     Args:
@@ -73,7 +73,7 @@ class S3DIS(Dataset):
             split, voxel_size, transform, voxel_max, loop
         self.presample = presample
         self.variable = variable
-        self.shuffle = shuffle 
+        self.shuffle = shuffle
 
         raw_root = os.path.join(data_root, 'raw')
         self.raw_root = raw_root
@@ -136,7 +136,7 @@ class S3DIS(Dataset):
         # pre-process.
         if self.transform is not None:
             data = self.transform(data)
-            
+
         if 'heights' not in data.keys():
             data['heights'] =  torch.from_numpy(coord[:, self.gravity_dim:self.gravity_dim+1].astype(np.float32))
         return data
@@ -146,7 +146,7 @@ class S3DIS(Dataset):
         # return 1   # debug
 
 
-"""debug 
+"""debug
 from openpoints.dataset import vis_multi_points
 import copy
 old_data = copy.deepcopy(data)
