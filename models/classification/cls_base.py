@@ -132,6 +132,5 @@ class ClsHead(nn.Module):
                 elif preprocess in ['avg', 'mean']:
                     global_feats.append(torch.mean(end_points, dim=self.point_dim, keepdim=False))
             end_points = torch.cat(global_feats, dim=1)
-        print(end_points.shape, self.head)
         logits = self.head(end_points)
         return logits

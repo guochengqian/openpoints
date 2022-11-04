@@ -41,7 +41,7 @@ class S3DIS(Dataset):
                    'board':       [200, 200, 200],
                    'clutter':     [50, 50, 50]}
     cmap = [*class2color.values()]
-    gravity_dim = 1 
+    gravity_dim = 1 # TODO: BUG!!! should be 2 
     """S3DIS dataset, loading the subsampled entire room as input without block/sphere subsampling.
     number of points per room in average, median, and std: (794855.5, 1005913.0147058824, 939501.4733064277)
     Args:

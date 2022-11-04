@@ -45,6 +45,7 @@ class S3DISSphere(data.Dataset):
                    'board':       [200, 200, 200],
                    'clutter':     [50, 50, 50]}
     cmap = np.array([*class2color.values()]).astype(np.uint8)
+    gravity_dim = 2
     """S3DIS dataset for scene segmentation task.
     Args:
         voxel_size: grid length for pre-subsampling point clouds.
@@ -339,11 +340,8 @@ class S3DISSphere(data.Dataset):
         if self.transform is not None:
             data = self.transform(data)
 
-        if 'heights' in data.keys():
-            data['x'] = torch.cat((data['x'], data['heights']), dim=1)
-        else:
-            data['x'] = torch.cat((data['x'],
-                                   torch.from_numpy(original_points[:, 2:3].astype(np.float32))), dim=-1)
+        if 'heights' not in data.keys():
+            data['heights'] =  torch.from_numpy(original_points[:, self.gravity_dim:self.gravity_dim+1].astype(np.float32))
         return data
 
     def __len__(self):

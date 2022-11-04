@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 from ..build import MODELS
 from ..layers import create_convblock1d, create_convblock2d, create_act, CHANNEL_MAP, \
-    create_grouper, furthest_point_sample, random_sample, three_interpolation
+    create_grouper, furthest_point_sample, random_sample, three_interpolation, get_aggregation_feautres
 
 
 def get_reduction_fn(reduction):
@@ -22,21 +22,6 @@ def get_reduction_fn(reduction):
     elif reduction == 'sum':
         pool = lambda x: torch.sum(x, dim=-1, keepdim=False)
     return pool
-
-
-def get_aggregation_feautres(p, dp, f, fj, feature_type='dp_fj'):
-    if feature_type == 'dp_fj':
-        fj = torch.cat([dp, fj], 1)
-    elif feature_type == 'dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([dp, fj, df], 1)
-    elif feature_type == 'pi_dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([p.transpose(1, 2).unsqueeze(-1).expand(-1, -1, -1, df.shape[-1]), dp, fj, df], 1)
-    elif feature_type == 'dp_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([dp, df], 1)
-    return fj
 
 
 class LocalAggregation(nn.Module):

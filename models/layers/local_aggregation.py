@@ -5,10 +5,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-# from ..backbone.pointnext import get_aggregation_feautres
 from .conv import create_convblock2d, create_convblock1d
 from .activation import create_act
-from .group import create_grouper
+from .group import create_grouper, get_aggregation_feautres
+
 
 CHANNEL_MAP = {
     'fj': lambda x: x,
@@ -27,21 +27,6 @@ CHANNEL_MAP = {
     'pj_dp_df': lambda x: x + 6,
     'dp_df': lambda x: x + 3,
 }
-
-def get_aggregation_feautres(p, dp, f, fj, feature_type='dp_fj'):
-    if feature_type == 'dp_fj':
-        fj = torch.cat([dp, fj], 1)
-    elif feature_type == 'dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([dp, fj, df], 1)
-    elif feature_type == 'pi_dp_fj_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([p.transpose(1, 2).unsqueeze(-1).expand(-1, -1, -1, df.shape[-1]), dp, fj, df], 1)
-    elif feature_type == 'dp_df':
-        df = fj - f.unsqueeze(-1)
-        fj = torch.cat([dp, df], 1)
-    return fj
-
 
 
 class ASSA(nn.Module):
