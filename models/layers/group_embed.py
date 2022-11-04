@@ -180,6 +180,7 @@ class P3Embed(nn.Module):
 
     def __init__(self,
                  sample_ratio=0.0625, 
+                 scale=4, 
                  group_size=32,
                  in_channels=3,
                  layers=4,
@@ -218,8 +219,8 @@ class P3Embed(nn.Module):
             raise NotImplementedError(f'{self.group.lower()} is not implemented. Only support ballquery, knn')
 
         # stages
-        stages = (1/sample_ratio) ** (1/4)
-        embed_dim = int(embed_dim // stages) 
+        stages = (1/sample_ratio) ** (1/scale)
+        embed_dim = int(embed_dim // 2 ** (stages-1))
         self.convs = nn.ModuleList() 
         self.channel_list = [in_channels]
         for i in range(int(stages)):
