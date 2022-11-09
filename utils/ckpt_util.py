@@ -149,6 +149,11 @@ def load_checkpoint(model, pretrained_path, module=None):
     if module is not None:
         base_ckpt = {k:v for k, v in base_ckpt.items() if module in k}
         
+    if "bert" in list(ckpt_state_dict.items())[0][0]:
+        base_ckpt=bert2vit_ckpt_rename(ckpt_state_dict)
+        #state_dict has "qkv.value" key, will be mis-regonized as metric and over flush the command ouput
+        state_dict=base_ckpt
+         
     if hasattr(model, 'module'):
         incompatible = model.module.load_state_dict(base_ckpt, strict=False)
     else:
@@ -293,3 +298,44 @@ def _named_modules_with_dup(
             continue
         submodule_prefix = prefix + ("." if prefix else "") + name
         yield from _named_modules_with_dup(module, submodule_prefix)
+        
+
+def bert2vit_ckpt_rename(state_dict,layerCount=8):
+    out_Order_dict=OrderedDict({})
+    for layer in range(0, layerCount):
+        #collect qkv
+        bert_q_weight_key="bert.encoder.layer." + str(layer) +".attention.self.query.weight"
+        bert_q_bias_key="bert.encoder.layer." + str(layer) +".attention.self.query.bias"
+        bert_k_weight_key="bert.encoder.layer." + str(layer) +".attention.self.key.weight"
+        bert_k_bias_key="bert.encoder.layer." + str(layer) +".attention.self.key.bias"
+        bert_v_weight_key="bert.encoder.layer." + str(layer) +".attention.self.value.weight"
+        bert_v_bias_key="bert.encoder.layer." + str(layer) +".attention.self.value.bias"
+        pvit_weight_key="blocks." + str(layer) +".attn.qkv.weight"
+        pvit_bias_key="blocks." + str(layer) +".attn.qkv.bias"
+        mergedQKV_weight= torch.cat((state_dict[bert_q_weight_key],state_dict[bert_k_weight_key],state_dict[bert_v_weight_key]),  0)
+        mergedQKV_bias= torch.cat((state_dict[bert_q_bias_key],state_dict[bert_k_bias_key],state_dict[bert_v_bias_key]),  0)     
+        out_Order_dict[pvit_weight_key]=mergedQKV_weight
+        out_Order_dict[pvit_bias_key]=mergedQKV_bias
+    #rename other layers
+    for key in state_dict.keys():
+        if "attention.output.dense" in key:
+            newKey=key.replace("attention.output.dense","attn.proj" )
+            newKey=newKey.replace("bert.encoder.layer","blocks" )
+            out_Order_dict[newKey]=state_dict[key]
+        elif "attention.output.LayerNorm" in key:
+            newKey=key.replace("attention.output.LayerNorm","norm1" )
+            newKey=newKey.replace("bert.encoder.layer","blocks" )
+            out_Order_dict[newKey]=state_dict[key]
+        elif "intermediate.dense" in key:
+            newKey=key.replace("intermediate.dense","mlp.fc1" )
+            newKey=newKey.replace("bert.encoder.layer","blocks" )
+            out_Order_dict[newKey]=state_dict[key]
+        elif "output.dense" in key and "attention" not in key:
+            newKey=key.replace("output.dense","mlp.fc2" )
+            newKey=newKey.replace("bert.encoder.layer","blocks" )
+            out_Order_dict[newKey]=state_dict[key]
+        elif "output.LayerNorm" in key:
+            newKey=key.replace("output.LayerNorm","norm2" )
+            newKey=newKey.replace("bert.encoder.layer","blocks" )
+            out_Order_dict[newKey]=state_dict[key]
+    return out_Order_dict
