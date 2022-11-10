@@ -1,5 +1,6 @@
 # Patch embedding for 2D/3D data
-# Reference: 
+# Reference:
+import math
 import torch
 from torch import nn as nn
 import torch.nn.functional as F
@@ -17,7 +18,7 @@ class SubsampleGroup(nn.Module):
     def __init__(self,
                  num_groups=256, group_size=32,
                  subsample='fps',  # random, FPS
-                 group='ballquery', 
+                 group='ballquery',
                  radius=0.1,
                  **kwargs
                  ):
@@ -66,13 +67,13 @@ class PointPatchEmbed(nn.Module):
                  in_channels=3,
                  layers=4,
                  embed_dim=256,
-                 channels=None, 
+                 channels=None,
                  subsample='fps',  # random, FPS
-                 group='ballquery', 
-                 normalize_dp=False, 
+                 group='ballquery',
+                 normalize_dp=False,
                  radius=0.1,
                  feature_type='dp_df',
-                 relative_xyz=True, 
+                 relative_xyz=True,
                  norm_args={'norm': 'bn1d'},
                  act_args={'act': 'relu'},
                  conv_args={'order': 'conv-norm-act'},
@@ -90,7 +91,7 @@ class PointPatchEmbed(nn.Module):
         elif 'random' in subsample.lower():
             self.sample_fn = random_sample
 
-        # TODO: make this embedding progressively 
+        # TODO: make this embedding progressively
         self.group = group.lower()
         if 'ball' in self.group or 'query' in self.group:
             self.grouper = QueryAndGroup(nsample=self.group_size,
@@ -107,12 +108,12 @@ class PointPatchEmbed(nn.Module):
                     layers // 2 - 1) + [embed_dim]
         else:
             channels = [CHANNEL_MAP[feature_type](in_channels)] + channels + [embed_dim]
-            layers = len(channels) -1  
+            layers = len(channels) -1
         conv1 = []
         for i in range(layers // 2):
             conv1.append(create_convblock2d(channels[i], channels[i + 1],
-                                            norm_args=norm_args if i!=(layers//2-1) else None, 
-                                            act_args=act_args if i!=(layers//2-1) else None, 
+                                            norm_args=norm_args if i!=(layers//2-1) else None,
+                                            act_args=act_args if i!=(layers//2-1) else None,
                                             **conv_args))
         self.conv1 = nn.Sequential(*conv1)
 
@@ -120,8 +121,8 @@ class PointPatchEmbed(nn.Module):
         conv2 = []
         for i in range(layers // 2, layers):
             conv2.append(create_convblock2d(channels[i], channels[i + 1],
-                                            norm_args=norm_args if i!=(layers-1) else None, 
-                                            act_args=act_args if i!=(layers-1) else None, 
+                                            norm_args=norm_args if i!=(layers-1) else None,
+                                            act_args=act_args if i!=(layers-1) else None,
                                             **conv_args
                                             ))
         self.conv2 = nn.Sequential(*conv2)
@@ -132,8 +133,8 @@ class PointPatchEmbed(nn.Module):
         else:
             self.pool = lambda x: torch.max(x, dim=-1, keepdim=True)[0]
         self.out_channels = channels[-1]
-        self.channel_list = [in_channels, embed_dim] 
-        
+        self.channel_list = [in_channels, embed_dim]
+
     def forward(self, p, x=None):
         # downsample
         B, N, _ = p.shape[:3]
@@ -146,9 +147,9 @@ class PointPatchEmbed(nn.Module):
         """visualization
         from openpoints.dataset.vis3d import vis_multi_points
         new_p = (dp.permute(0, 2, 3, 1) + center_p.unsqueeze(2)).view(B, -1, 3)
-        vis_multi_points([p[0].cpu().numpy(), new_p[0].cpu().numpy(), center_p[0].cpu().numpy()])  
+        vis_multi_points([p[0].cpu().numpy(), new_p[0].cpu().numpy(), center_p[0].cpu().numpy()])
         """
-        
+
         # concat neighborhood x
         # TODO: using a local aggregation layer
         if self.feature_type == 'dp':
@@ -156,10 +157,10 @@ class PointPatchEmbed(nn.Module):
         elif self.feature_type == 'dp_fj':
             fj = torch.cat([dp, fj], dim=1)
         elif self.feature_type == 'dp_df':
-            center_x = torch.gather(x, 2, idx.unsqueeze(1).expand(-1, x.shape[1], -1)) 
+            center_x = torch.gather(x, 2, idx.unsqueeze(1).expand(-1, x.shape[1], -1))
             fj = torch.cat([dp, fj - center_x.unsqueeze(-1)], dim=1)
         elif self.feature_type == 'df':
-            center_x = torch.gather(x, 2, idx.unsqueeze(1).expand(-1, x.shape[1], -1)) 
+            center_x = torch.gather(x, 2, idx.unsqueeze(1).expand(-1, x.shape[1], -1))
             fj = fj - center_x.unsqueeze(-1)
         fj = self.conv1(fj)
 
@@ -173,24 +174,24 @@ class PointPatchEmbed(nn.Module):
 
 @MODELS.register_module()
 class P3Embed(nn.Module):
-    """ 
+    """
     Progressive Point Patch Embedding for 3d data (point cloud)
     A convolution based approach to patchifying a point cloud w/ embedding projection.
     """
 
     def __init__(self,
-                 sample_ratio=0.0625, 
-                 scale=4, 
+                 sample_ratio=0.0625,
+                 scale=4,
                  group_size=32,
                  in_channels=3,
                  layers=4,
                  embed_dim=256,
                  subsample='fps',  # random, FPS
-                 group='ballquery', 
-                 normalize_dp=False, 
+                 group='ballquery',
+                 normalize_dp=False,
                  radius=0.1,
                  feature_type='dp_df',
-                 relative_xyz=True, 
+                 relative_xyz=True,
                  norm_args={'norm': 'bn1d'},
                  act_args={'act': 'relu'},
                  conv_args={'order': 'conv-norm-act'},
@@ -219,19 +220,19 @@ class P3Embed(nn.Module):
             raise NotImplementedError(f'{self.group.lower()} is not implemented. Only support ballquery, knn')
 
         # stages
-        stages = (1/sample_ratio) ** (1/scale)
+        stages = int(math.log(1/sample_ratio, scale))
         embed_dim = int(embed_dim // 2 ** (stages-1))
-        self.convs = nn.ModuleList() 
+        self.convs = nn.ModuleList()
         self.channel_list = [in_channels]
-        for i in range(int(stages)):
+        for _ in range(int(stages)):
             # convolutions
             channels = [CHANNEL_MAP[feature_type](in_channels)] + [embed_dim] * (layers // 2) + [embed_dim * 2] * (
                     layers // 2 - 1) + [embed_dim]
             conv1 = []
             for i in range(layers // 2):
                 conv1.append(create_convblock2d(channels[i], channels[i + 1],
-                                                norm_args=norm_args if i!=(layers//2-1) else None, 
-                                                act_args=act_args if i!=(layers//2-1) else None, 
+                                                norm_args=norm_args if i!=(layers//2-1) else None,
+                                                act_args=act_args if i!=(layers//2-1) else None,
                                                 **conv_args))
             conv1 = nn.Sequential(*conv1)
 
@@ -239,8 +240,8 @@ class P3Embed(nn.Module):
             conv2 = []
             for i in range(layers // 2, layers):
                 conv2.append(create_convblock2d(channels[i], channels[i + 1],
-                                                norm_args=norm_args if i!=(layers-1) else None, 
-                                                act_args=act_args if i!=(layers-1) else None, 
+                                                norm_args=norm_args,
+                                                act_args=act_args,
                                                 **conv_args
                                                 ))
             conv2 = nn.Sequential(*conv2)
@@ -248,7 +249,7 @@ class P3Embed(nn.Module):
 
             self.channel_list.append(embed_dim)
             in_channels = embed_dim
-            embed_dim *= 2 
+            embed_dim *= 2
 
         # reduction layer
         if reduction in ['mean', 'avg', 'meanpool', 'avgpool']:
@@ -256,7 +257,7 @@ class P3Embed(nn.Module):
         else:
             self.pool = lambda x: torch.max(x, dim=-1, keepdim=True)[0]
         self.out_channels = channels[-1]
-        
+
     def forward(self, p, f=None):
         B, N, _ = p.shape[:3]
         out_p, out_f = [p], [f]
@@ -266,7 +267,7 @@ class P3Embed(nn.Module):
             idx = self.sample_fn(cur_p, int(N //4)).long()
             N = N // 4
             center_p = torch.gather(cur_p, 1, idx.unsqueeze(-1).expand(-1, -1, 3))
-            center_f = torch.gather(cur_f, 2, idx.unsqueeze(1).expand(-1, cur_f.shape[1], -1)) 
+            center_f = torch.gather(cur_f, 2, idx.unsqueeze(1).expand(-1, cur_f.shape[1], -1))
 
             # query neighbors.
             dp, fj = self.grouper(center_p, cur_p, cur_f)
@@ -278,7 +279,7 @@ class P3Embed(nn.Module):
                 [self.pool(fj).expand(-1, -1, -1, self.group_size),
                 fj],
                 dim=1)
-            
+
             # output
             out_f.append(self.pool(convs[1](fj)).squeeze(-1))
             out_p.append(center_p)
