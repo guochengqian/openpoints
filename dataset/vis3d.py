@@ -103,15 +103,12 @@ def vis_multi_points(points, colors=None, labels=None,
                 colors[i] = np.array((colors[i] - colors[i].min) / (colors[i].max() - colors[i].min()) *255).astype(np.int8)
                 
         plotter.add_points(points[i], opacity=opacity, point_size=point_size, render_points_as_spheres=True, scalars=colors[i], rgb=True)
-    plotter.link_views()
+    # plotter.link_views() # pyvista might have bug for linked_views. Comment this line out if you cannot see the visualzation result.
     if save_fig:
-        # plotter.show(auto_close=False)
-        # plotter.screenshot(filename=f'{save_name}.png')
-        plotter.show(screenshot='airplane.png')
+        plotter.show(screenshot=f'{save_name}.png')
         plotter.close()
     else:
         plotter.show()
-        plotter.close()
     
 
 def vis_neighbors(points, neighbor_points, point_index, 
