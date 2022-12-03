@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openpoints"
+version = "1.0"
+dependencies = [
+    "multimethod",
+    "pyyaml",
+    "shortuuid",
+    "termcolor",
+    "scikit-learn",
+    "easydict",
+    "numpy",
+    "torch",
+]
+[tool.setuptools]
+packages = ["openpoints"]
