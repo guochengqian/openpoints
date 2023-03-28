@@ -13,7 +13,7 @@ OpenPoints currently supports reproducing the following models:
 - PointMLP
 - PointNeXt
 - Pix4Point
-
+- PointVector
 
 
 ## Features

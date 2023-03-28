@@ -8,3 +8,4 @@ from .pointvit import PointViT, PointViTDecoder
 from .pct import Pct
 from .curvenet import CurveNet
 from .simpleview import MVModel
+from .pointvetor import PointVectorEncoder, PointVectorDecoder,PointVectorPartDecoder
