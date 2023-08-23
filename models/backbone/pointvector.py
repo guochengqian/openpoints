@@ -1,7 +1,8 @@
-"""Official implementation of PointNext
-PointNeXt: Revisiting PointNet++ with Improved Training and Scaling Strategies
-https://arxiv.org/abs/2206.04670
-Guocheng Qian, Yuchen Li, Houwen Peng, Jinjie Mai, Hasan Abed Al Kader Hammoud, Mohamed Elhoseiny, Bernard Ghanem
+"""Official implementation of PointVector
+PointVector: A Vector Representation In Point Cloud Analysis
+https://arxiv.org/pdf/2205.10528v3.pdf
+Xin Deng* WenYu Zhang* Qing Ding† XinMing Zhang†
+University of Science and Technology of China
 """
 from asyncio import FastChildWatcher
 from audioop import bias
@@ -307,14 +308,11 @@ class SetAbstractioncls(nn.Module):
             if self.use_res or 'df' in self.feature_type:
                 fi = torch.gather(
                     f, -1, idx.unsqueeze(1).expand(-1, f.shape[1], -1))
-                # if self.use_res:
-                #     identity = self.skipconv(fi)
             else:
                 fi = None
             dp, fj = self.grouper(new_p, p, f)
             
             if self.use_res:
-                # f = self.act(f + identity)
                 f=self.convs(dp,fi,fj)
             else:
                 fj = get_aggregation_feautres(new_p, dp, fi, fj, feature_type=self.feature_type)
