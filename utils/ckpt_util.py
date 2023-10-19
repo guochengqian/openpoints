@@ -158,6 +158,7 @@ def load_checkpoint(model, pretrained_path, module=None):
         incompatible = model.module.load_state_dict(base_ckpt, strict=False)
     else:
         incompatible = model.load_state_dict(base_ckpt, strict=False)
+        
     if incompatible.missing_keys:
         logging.info('missing_keys')
         logging.info(
@@ -179,6 +180,103 @@ def load_checkpoint(model, pretrained_path, module=None):
     logging.info(f'ckpts @ {epoch} epoch( {metrics} )')
     return epoch, metrics
 
+
+
+def load_checkpoint_inv(model, pretrained_path, module=None):
+    if not os.path.exists(pretrained_path):
+        raise NotImplementedError('no checkpoint file from path %s...' % pretrained_path)
+    # load state dict
+    state_dict = torch.load(pretrained_path, map_location='cpu')
+
+    # parameter resume of base model
+    ckpt_state_dict = state_dict
+    for key in state_dict.keys():
+        if key in ['model', 'net', 'network', 'state_dict', 'base_model']:
+            ckpt_state_dict = ckpt_state_dict[key]
+    base_ckpt = {k.replace("module.", ""): v for k, v in ckpt_state_dict.items()}
+    if module is not None:
+        base_ckpt = {k:v for k, v in base_ckpt.items() if module in k}
+        
+    if "bert" in list(ckpt_state_dict.items())[0][0]:
+        base_ckpt=bert2vit_ckpt_rename(ckpt_state_dict)
+        #state_dict has "qkv.value" key, will be mis-regonized as metric and over flush the command ouput
+        state_dict=base_ckpt
+
+    all_keys = list(base_ckpt.keys())
+    new_dict = OrderedDict()
+    for key in all_keys:
+        key_new = key
+        if 'encoder' in key:
+            key_new = key[8:]
+        # elif 'decoder' in key:
+        #     continue
+            
+        if ("norm1" in key) or ("attn" in key):  
+            key_new = key_new.split('.')              
+            key_new.insert(2, 'inv_block.Fm')
+            key_new = '.'.join(key_new)
+        elif ("norm2" in key_new) or ("mlp" in key_new):
+            key_new = key_new.split('.')
+            key_new.insert(2, 'inv_block.Gm')
+            key_new = '.'.join(key_new)
+        
+        new_dict[key_new] = base_ckpt[key]
+
+    base_ckpt = new_dict
+
+    if hasattr(model, 'module'):
+        incompatible = model.module.load_state_dict(base_ckpt, strict=False)
+    else:
+        incompatible = model.load_state_dict(base_ckpt, strict=False)
+
+    # Compare keys manually to print mismatched keys
+    model_state_dict = model.state_dict()
+    keys_in_ckp_not_in_model = []
+
+    for key in base_ckpt.keys():
+        if key in model_state_dict.keys():
+            if base_ckpt[key].shape != model_state_dict[key].shape:
+                keys_in_ckp_not_in_model.append(key)
+        else:
+            keys_in_ckp_not_in_model.append(key)
+    # Print mismatched keys
+    if keys_in_ckp_not_in_model:
+        print("Keys in checkpoint but not in model:")
+        for key in keys_in_ckp_not_in_model:
+            print(key)
+
+    # Compare keys manually to print keys in model but not in checkpoint
+    keys_in_model_not_in_ckp = [key for key in model_state_dict.keys() if key not in base_ckpt.keys()]
+
+    # Print keys in model but not in checkpoint
+    if keys_in_model_not_in_ckp:
+        print("Keys in Model but Not in Checkpoint:")
+        for key in keys_in_model_not_in_ckp:
+            print(key)
+    else:
+        print("No keys in model but not in checkpoint.")            
+
+
+    if incompatible.missing_keys:
+        logging.info('missing_keys')
+        logging.info(
+            get_missing_parameters_message(incompatible.missing_keys),
+        )
+    if incompatible.unexpected_keys:
+        logging.info('unexpected_keys')
+        logging.info(
+            get_unexpected_parameters_message(incompatible.unexpected_keys)
+        )
+    logging.info(f'Successful Loading the ckpt from {pretrained_path}')
+
+    epoch = state_dict.get('epoch', -1)
+    metrics = {}
+    for key in state_dict.keys():
+        is_metric_key = sum([item in key for item in ['metric', 'acc', 'test', 'val']]) > 0
+        if is_metric_key:
+            metrics[key] = state_dict[key]
+    logging.info(f'ckpts @ {epoch} epoch( {metrics} )')
+    return epoch, metrics
 
 def get_missing_parameters_message(keys: List[str]) -> str:
     """
