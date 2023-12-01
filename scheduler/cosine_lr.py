@@ -34,6 +34,7 @@ class CosineLRScheduler(Scheduler):
                  cycle_decay: float = 1.,
                  cycle_limit: int = 1,
                  warmup_t=0,
+                 warmup_freeze_t=1,
                  warmup_lr_init=0,
                  warmup_prefix=False,
                  t_in_epochs=True,
@@ -68,14 +69,18 @@ class CosineLRScheduler(Scheduler):
             super().update_groups(self.warmup_lr_init)
         else:
             self.warmup_steps = [1 for _ in self.base_values]
-
+        self.warmup_freeze = warmup_freeze_t > 1
+        self.decay_start_t = warmup_freeze_t + warmup_t
+        
     def _get_lr(self, t):
         if t < self.warmup_t:
             lrs = [self.warmup_lr_init + t * s for s in self.warmup_steps]
+        # TODO: seems not correct.
+        elif t < self.decay_start_t and self.warmup_freeze:
+            lrs = [self.warmup_lr_init + self.warmup_t * s for s in self.warmup_steps]
         else:
             if self.warmup_prefix:
                 t = t - self.warmup_t
-
             if self.cycle_mul != 1:
                 i = math.floor(math.log(1 - t / self.t_initial * (1 - self.cycle_mul), self.cycle_mul))
                 t_i = self.cycle_mul ** i * self.t_initial

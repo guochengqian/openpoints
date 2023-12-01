@@ -18,35 +18,19 @@ import sys
 from ..layers import Mlp, DropPath, trunc_normal_, lecun_normal_
 
 use_inv = True
+use_customized_backprop = True
+
 
 class RevBackProp(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, x, blocks, pos_embed=None, alpha=0., lambd=1., num_cached = 0):
+    def forward(ctx, x, blocks, pos_embed=None, alpha=0., lambd=1.):
         # print('during rev, alpha, lambda:', alpha, lambd) # TODO: DEBUG
 
-        # hp, number of cached layers
-
-        num_blks = len(blocks)
-        buffer_layers = [] 
-        if num_blks > 2:
-            cached_layer = int(num_blks / (num_cached + 1))
-            for i in range(1, num_cached + 1):
-                buffer_layers.append(cached_layer * i - 1)
-
-        intermediate = [] 
-
-        for idx, block in enumerate(blocks):
+        for block in blocks:
             x = block(x, pos_embed, alpha=alpha, lambd=lambd)
 
-            if idx in buffer_layers:
-                intermediate.extend([x.detach()])  # for debug    
-
-        if len(buffer_layers) == 0:
-            all_tensors = [x.detach(), pos_embed.detach() if pos_embed is not None else pos_embed]
-        else:
-            intermediate = [torch.LongTensor(buffer_layers), *intermediate] # for debug
-            all_tensors = [x.detach(), pos_embed.detach() if pos_embed is not None else pos_embed, *intermediate] # for debug            
+        all_tensors = [x.detach(), pos_embed.detach() if pos_embed is not None else pos_embed]
 
         ctx.save_for_backward(*all_tensors)
         ctx.blocks = blocks
@@ -60,49 +44,28 @@ class RevBackProp(torch.autograd.Function):
     def backward(ctx, dy):  # pragma: no cover
 
          # retrieve params from ctx for backward
-         Y, pos_embed, *intermediate = ctx.saved_tensors     
+         Y, pos_embed = ctx.saved_tensors     
          blocks = ctx.blocks   
          lambd = ctx.lambd
          alpha = ctx.alpha               
          
-         if len(intermediate) != 0:
-             buffer_layers = intermediate[0].tolist()
-         else:
-             buffer_layers = []
-
          dY_1, dY_2 = torch.chunk(dy, 2, dim=-1)
          Y_1, Y_2 = torch.chunk(Y, 2, dim=-1)
 
-         for idx_i, blk in enumerate(blocks[::-1]):
-            idx = len(blocks) - idx_i - 1 
-
-            if idx in buffer_layers:
-                Y_intermediate = intermediate[buffer_layers.index(idx) + 1]
-                Y_1_inter, Y_2_inter = torch.chunk(Y_intermediate, 2, dim=-1)
-                                
-                Y_1, Y_2, dY_1, dY_2 = blk.backward_pass(
-                    Y_1=Y_1_inter, 
-                    Y_2=Y_2_inter,
-                    dY_1=dY_1,
-                    dY_2=dY_2,
-                    pos_embed=pos_embed,
-                    alpha=alpha,
-                    lambd=lambd,
-                    )            
-            else:
-                Y_1, Y_2, dY_1, dY_2 = blk.backward_pass(
-                    Y_1=Y_1, 
-                    Y_2=Y_2,
-                    dY_1=dY_1,
-                    dY_2=dY_2,
-                    pos_embed=pos_embed,
-                    alpha=alpha,
-                    lambd=lambd,
-                    )
+         for _, blk in enumerate(blocks[::-1]):
+            Y_1, Y_2, dY_1, dY_2 = blk.backward_pass(
+                Y_1=Y_1, 
+                Y_2=Y_2,
+                dY_1=dY_1,
+                dY_2=dY_2,
+                pos_embed=pos_embed,
+                alpha=alpha,
+                lambd=lambd,
+                )
 
          dx = torch.cat([dY_1, dY_2], dim=-1)
          del Y_1, Y_2, dY_1, dY_2
-         return dx, None, None, None, None, None
+         return dx, None, None, None, None
 
 def seed_cuda():
 
@@ -134,7 +97,6 @@ class InvFuncWrapper(nn.Module):
     def forward(self, x, pos_embed=None, alpha=0., lambd=1.):
 
         # torch.manual_seed(2022)
-        # print(x.shape)
         x1, x2 = torch.chunk(x, 2, dim=self.split_dim)
         # x1, x2 = x1.contiguous(), x2.contiguous()
         fmd = self.Fm(x2, pos_embed, alpha)
@@ -164,7 +126,6 @@ class InvFuncWrapper(nn.Module):
         # print(f'Before Gm: {torch.cuda.memory_allocated(device)}')
         with torch.enable_grad():
             Y_1.requires_grad = True
-            # print('backward alpha: ', alpha)
             g_Y_1 = self.Gm(Y_1, alpha)
             # print(f'After Gm: {torch.cuda.memory_allocated(device)}')
             g_Y_1.backward(dY_2, retain_graph=True)
@@ -251,15 +212,12 @@ class Block_inv_F(nn.Module):
         self.seeds['droppath'] = seed_cuda()        
 
     def forward(self, x, pos_embed=None, alpha=0):
-        # print('f block seed: ', self.seeds['droppath'])
-        # print('inside F alpha: ', alpha)
         torch.manual_seed(self.seeds['droppath'])
-        # print('L216: pos_embed is None?: ', pos_embed==None)
+        # print('L216:', pos_embed)
         if pos_embed is not None:
             x = x + pos_embed
-        skip = x*alpha
-        # print('L219:', pos_embed)
-        x = skip + self.drop_path(self.attn(self.norm1(x)))
+            # print('L219:', pos_embed)
+        x = alpha*x + self.drop_path(self.attn(self.norm1(x)))
         return x
 
 class Block_inv_G(nn.Module):
@@ -277,10 +235,7 @@ class Block_inv_G(nn.Module):
 
     def forward(self, x, alpha=0):
         torch.manual_seed(self.seeds['droppath'])
-        # print('g block seed: ', self.seeds['droppath'])
-        # print('inside G alpha: ', alpha)
-        skip = alpha*x
-        x = skip + self.drop_path(self.mlp(self.norm2(x)))
+        x = alpha*x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
 class Block(nn.Module):
@@ -305,7 +260,7 @@ class Block(nn.Module):
             x = self.inv_block(x, pos_embed, alpha=alpha, lambd=lambd)
         else:
             x = self.Fm(x, pos_embed, alpha=1)
-            x = self.Gm(x, alpha=1)
+            x = self.Gm(x)
 
         return x
 
@@ -387,17 +342,11 @@ class InvPointViT(nn.Module):
                  init_epoch = 0, 
                  start_epoch = 1, 
                  end_epoch = 200, 
-                 stop_epoch = -1, 
                  freq=2, 
                  init_lambd = 0.1, 
                  lambd = 1., 
                  alpha = 0.,  
-                 option = -1,    
-                 freeze_ratio = 0.6,    
-                 use_step = False, 
-                 num_training_steps_per_epoch=250,
-                 use_customized_backprop=True, 
-                 num_cached=0,
+                 option = -1,     
                  **kwargs
                  ):
         """
@@ -463,17 +412,11 @@ class InvPointViT(nn.Module):
         self.init_epoch = init_epoch
         self.start_epoch = start_epoch
         self.end_epoch = end_epoch
-        self.stop_epoch = stop_epoch
         self.freq = freq
         self.alpha = alpha 
         self.init_lambd = init_lambd
         self.lambd = lambd
-        self.option = option   
-        self.use_step = use_step 
-        self.freeze_ratio = freeze_ratio
-        self.num_training_steps_per_epoch = num_training_steps_per_epoch 
-        self.use_customized_backprop = use_customized_backprop
-        self.num_cached = num_cached
+        self.option = option    
         
     def initialize_weights(self):
         torch.nn.init.normal_(self.cls_token, std=.02)
@@ -500,154 +443,61 @@ class InvPointViT(nn.Module):
     def get_num_layers(self):
         return self.depth
 
-    def get_alpha_lambd_old(self, epoch=-1, step=-1):
-        if self.stop_epoch > 0:
-            epoch = epoch if epoch < self.stop_epoch else self.stop_epoch
-            step = step if epoch < self.stop_epoch else (self.stop_epoch-1) * 2000 / 8
-
-        # print(f'during rev in training: {self.training}, epoch: {epoch}, step: {step}') # TODO: DEBUG
-        if self.use_step:
-            start_epoch = (self.start_epoch-1) * 2000  / 8
-            end_epoch = (self.end_epoch-1) * 2000 / 8
-            epoch = step
-        else:
-            start_epoch = self.start_epoch
-            end_epoch = self.end_epoch
-         
+    def get_alpha_lambd(self, epoch=-1):
+        
         if self.option != -1:
             ###################### alpha ######################
             if epoch < self.init_epoch:  # Inference
-                alpha = self.alpha
-            elif epoch < start_epoch:
+                alpha = 0.0
+            elif epoch < self.start_epoch:
                 alpha = 1.0
-            elif epoch >= start_epoch and epoch < end_epoch:
-                if self.option == 6:
-                    alpha = 1.
+            elif epoch >= self.start_epoch and epoch < self.end_epoch:
                 # Option 0: linear, interleave alpha and lambda
-                elif self.option == 0.0:
-                    alpha = round(min(max(-round(self.freq/(end_epoch-start_epoch), 12) * math.ceil((epoch-start_epoch-1-self.freq//2) / self.freq) + 1, 0), 1.), 4)
+                if self.option == 0.0:
+                    alpha = round(min(max(-round(self.freq/(self.end_epoch-self.start_epoch), 2) * math.ceil((epoch-self.start_epoch-1-self.freq//2) / self.freq) + 1, 0), 1.), 2)
                 # self.option 1: linear alpha = (1/(A+1-N))*x + N/(N-A-1), lambd = 1 - alpha + 0.01
                 elif self.option == 1:
-                    alpha = round(1/(start_epoch+1-end_epoch) * epoch + end_epoch/(end_epoch-start_epoch-1), 2)
+                    alpha = round(1/(self.start_epoch+1-self.end_epoch) * epoch + self.end_epoch/(self.end_epoch-self.start_epoch-1), 2)
                 # self.option 2: logarithmic
                 elif self.option == 2:
                     base = math.e
-                    a = 1/(math.log((start_epoch+1) / end_epoch, base))
-                    c = - a * math.log(end_epoch, base)
+                    a = 1/(math.log((self.start_epoch+1) / self.end_epoch, base))
+                    c = - a * math.log(self.end_epoch, base)
                     alpha = round(max(min(a *  math.log(epoch, base) + c, 1.), 0), 2)
                 # self.option 3: exponential
                 elif self.option == 3:
                     base = math.e
-                    a = 1/(pow(base, start_epoch+1) - pow(base, end_epoch))
-                    c = - a * pow(base, end_epoch)
+                    a = 1/(pow(base, self.start_epoch+1) - pow(base, self.end_epoch))
+                    c = - a * pow(base, self.end_epoch)
                     alpha = round(max(min(a * pow(base, epoch) + c, 1.), 0), 2)
                 # self.option 4: hand-crafted, increasing
                 elif self.option == 4:
                     alpha_list = [1., 1., 0.8, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.]
                     alpha = alpha_list[epoch - 1]
-                elif self.option == 5:
-                    alpha = self.alpha 
-            elif epoch >= end_epoch:
-                if self.option ==6:
-                    alpha = 1.
-                else:
-                    alpha = self.alpha
+
+            elif epoch >= self.end_epoch:
+                alpha = 0.0   
 
             ###################### lambda #####################
             if epoch < self.init_epoch:  # Inference
                 lambd = 1.0
-            elif epoch < start_epoch:
+            elif epoch < self.start_epoch:
                 lambd = 0.0
-            elif epoch >= start_epoch and epoch < end_epoch:
-                if self.option == 6:
-                   lambd = -1 * round(max(min(self.freq/(end_epoch-start_epoch) * math.ceil((epoch-start_epoch-1) / self.freq) + self.init_lambd, 1.), self.init_lambd), 4)               
-                elif self.option == 0 or self.option == 5:
-                    lambd = round(max(min(self.freq/(end_epoch-start_epoch) * math.ceil((epoch-start_epoch-1) / self.freq) + self.init_lambd, 1.), self.init_lambd), 4) 
+            elif epoch >= self.start_epoch and epoch < self.end_epoch:
+                if self.option == 0:
+                    lambd = round(max(min(self.freq/(self.end_epoch-self.start_epoch) * math.ceil((epoch-self.start_epoch-1) / self.freq) + self.init_lambd, 1.), self.init_lambd), 2)      
                 else:
                     lambd = round(min(1 - alpha + 0.1, 1.), 2)
-            elif epoch >= end_epoch:
-                if self.option == 6:
-                    lambd = -1.
-                else:
-                    lambd = 1.0
+            elif epoch >= self.end_epoch:
+                lambd = 1.0
         else:
             alpha, lambd = self.alpha, self.lambd
-        # print(f'during rev in training: {self.training}, alpha: {alpha}, lambda: {lambd}, start_epoch: {start_epoch}, end_epoch: {end_epoch}') # TODO: DEBUG
-        return alpha, lambd
-    
-    def lambd_alpha_options(self, option=0, current=-1, start=0, end=10, freq=10., freeze_ratio=0.6):
-        '''
-                -1: only change lambda 
-                0: linearly change lamba and alpha, interleave 
-                5: change alpha linearly first, and then lambd linearly 
-        '''
-        lambd_min = 0.1
-        lambd_max = 0.1 + freeze_ratio
-        alpha_min = 1. - freeze_ratio
-        alpha_max = 1.
-        # breakpoint()
-        if option == 0:
-            lambd = round(max(min((freq/(end-start) * math.ceil((current-start-1) / freq) + lambd_min), lambd_max), lambd_min), 4) 
-            alpha = round(min(max(-round(freq/(end-start), 12) * math.ceil((current-start-1-freq//2) / freq) + 1, alpha_min), alpha_max), 4)
-        # elif option == -1:
-        #     lambd = -1 * round(max(min(freq/(end-start) * math.ceil((current-start-1) / freq) + lambd_min, lambd_max), lambd_min), 4) 
-        #     alpha = 1.0
-        elif option == -1:
-            alpha = self.alpha 
-            lambd = self.lambd
-        elif option == 5:
-            freq = int(freq/2)
-            end_half = start + int((end - start) / 2)
-            if current < end_half:
-                lambd = lambd_min
-            else:
-                lambd = round(max(min(freq/(end-end_half) * math.ceil((current-end_half-1) / freq) + lambd_min, lambd_max), lambd_min), 4) 
-            alpha = round(min(max(-round(freq/(end_half-start), 12) * math.ceil((current-start-1-freq//2) / freq) + 1, alpha_min), alpha_max), 4)
-        elif option == 6:
-            freq = int(freq/2)
-            end_half = start + int((end - start) / 2) 
-
-            lambd = round(max(min((freq/(end_half-start) * math.ceil((current-start-1) / freq) + lambd_min), lambd_max), lambd_min), 4)    
-            if current < end_half:
-                alpha = alpha_max   
-            else:
-                alpha = round(min(max(-round(freq/(end-end_half), 12) * math.ceil((current-end_half-1-freq//2) / freq) + 1, alpha_min), alpha_max), 4)
-        return lambd, alpha
-
-    def get_alpha_lambd(self, epoch=-1, iter=-1, 
-                        option=0, 
-                        start_epoch=1, end_epoch=50, 
-                        freq=10., freeze_ratio=0.6, 
-                        use_iter=True, 
-                        num_training_steps_per_epoch=1000, 
-                        stop_epoch=40 # FIXME: not supported yet.
-                        ):
-        '''
-            freq: frequency in epoch if use_iter else frequence in iteration
-        '''
-        if option == -1:
-            alpha = self.alpha 
-            lambd = self.lambd
-        else:
-            if use_iter:
-                current = iter
-                start = (start_epoch - 1) * num_training_steps_per_epoch
-                end = (end_epoch - 1) * num_training_steps_per_epoch
-            else:
-                current = epoch
-                start = start_epoch 
-                end = end_epoch 
-
-            if current < start:  # Use original non-reversible for the initial epoch
-                alpha = 1.0
-                lambd = 0.
-            elif current >= start :
-                lambd, alpha = self.lambd_alpha_options(option, current, start, end, freq, freeze_ratio)
+        # print('during rev, alpha, lambda:', alpha, lambd) # TODO: DEBUG
         return alpha, lambd
 
-    def forward(self, p, x=None, epoch=-1, step=-1):
+    def forward(self, p, x=None, epoch=-1):
         if hasattr(p, 'keys'): 
-            p, x, epoch, step = p['pos'], p['x'] if 'x' in p.keys() else None, p['epoch'] if 'epoch' in p.keys() else -1, p['iter'] if 'iter' in p.keys() else -1
+            p, x, epoch = p['pos'], p['x'] if 'x' in p.keys() else None, p['epoch'] if 'epoch' in p.keys() else -1
         if x is None:
             x = p.clone().transpose(1, 2).contiguous()
         p_list, x_list = self.patch_embed(p, x)
@@ -663,35 +513,27 @@ class InvPointViT(nn.Module):
         x = torch.cat(tokens, dim=1)
         
         with torch.set_grad_enabled(epoch>=self.start_epoch):
-            alpha, lambd = self.get_alpha_lambd(epoch, step, 
-                        option=self.option, 
-                        start_epoch=self.start_epoch, end_epoch=self.end_epoch, 
-                        freq=self.freq, freeze_ratio=self.freeze_ratio, 
-                        use_iter=self.use_step, 
-                        num_training_steps_per_epoch=self.num_training_steps_per_epoch, 
-                        stop_epoch=self.stop_epoch
-                                                ) 
+            alpha, lambd = self.get_alpha_lambd(epoch) 
             if self.add_pos_each_block:
                 if use_inv:
-                    x = self._use_inv(x, pos_embed, alpha, lambd, num_cached=self.num_cached)
+                    x = self._use_inv(x, pos_embed, alpha, lambd)
                 else:
                     for block in self.blocks:
                         x = block(x, pos_embed)
             else:
                 x = self.pos_drop(x + pos_embed)
                 if use_inv:
-                    x = self._use_inv(x, None, alpha, lambd, num_cached=self.num_cached)
+                    x = self._use_inv(x, None, alpha, lambd)
                 else:
                     for block in self.blocks:
                         x = block(x)
         x = self.norm(x)
         return p_list, x_list, x
 
-    def _use_inv(self, x, pos_embed=None, alpha=0., lambd=1., num_cached=0):
+    def _use_inv(self, x, pos_embed=None, alpha=0., lambd=1.):
         x = torch.cat((x, x), dim=-1)
-        # breakpoint()
-        if self.use_customized_backprop:    
-            x = RevBackProp.apply(x, self.blocks, pos_embed, alpha, lambd, num_cached)
+        if use_customized_backprop:    
+            x = RevBackProp.apply(x, self.blocks, pos_embed, alpha, lambd)
         else:
             for block in self.blocks:
                 x = block(x, pos_embed)            

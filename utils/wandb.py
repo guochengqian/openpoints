@@ -39,6 +39,8 @@ class Wandb:
     def _set_to_wandb_args(wandb_args, cfg, name):
         var = getattr(cfg.wandb, name, None)
         if var:
+            if name == 'name':
+                var = var[:64]
             wandb_args[name] = var
 
     @staticmethod
@@ -57,6 +59,7 @@ class Wandb:
             Wandb._set_to_wandb_args(wandb_args, cfg, "notes")
             Wandb._set_to_wandb_args(wandb_args, cfg, "config")
             Wandb._set_to_wandb_args(wandb_args, cfg, "id")
+            print(wandb_args)
 
             try:
                 commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()

@@ -49,6 +49,7 @@ def build_scheduler_from_cfg(args, optimizer, return_epochs=False):
             lr_min=min_lr,
             warmup_lr_init=warmup_lr,
             warmup_t=warmup_epochs,
+            warmup_freeze_t=getattr(args, 'warmup_freeze_epochs', 0),
             k_decay=getattr(args, 'lr_k_decay', 1.0),
             **cycle_args,
             **noise_args,

@@ -221,7 +221,6 @@ def load_checkpoint_inv(model, pretrained_path, module=None):
             key_new = '.'.join(key_new)
         
         new_dict[key_new] = base_ckpt[key]
-
     base_ckpt = new_dict
 
     if hasattr(model, 'module'):
