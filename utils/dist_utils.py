@@ -11,7 +11,6 @@ def _init_dist_pytorch(backend, **kwargs):
     print(f'init distributed in rank {torch.distributed.get_rank()}')
 
 
-
 def get_dist_info(cfg):
     mp = False
     if dist.is_available() and dist.is_initialized():
