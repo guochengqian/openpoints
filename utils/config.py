@@ -14,37 +14,70 @@ def print_args(args, printer=logging.info):
         printer("{}:{}".format(arg, content))
     printer("==========     args END    =============")
 
-
+# 声明一个配置解析类，继承dict，dict是python内置的字典类
 class EasyConfig(dict):
     def __getattr__(self, key: str) -> Any:
+        """__getattr__方法
+        这是一个 属性访问 的特殊方法。
+        当访问一个不存在的属性时, Python 会调用这个方法。
+        在 EasyConfig 类中，这个方法尝试从字典中获取对应的键值对。如果键不存在，则抛出 AttributeError 异常。
+        """
         if key not in self:
             raise AttributeError(key)
         return self[key]
-
+    # 
     def __setattr__(self, key: str, value: Any) -> None:
+        """__setattr__方法
+        这是一个 属性赋值 的特殊方法。
+        当通过点操作符设置一个属性值时, Python 会调用这个方法。
+        在 EasyConfig 类中，这个方法将属性的设置操作映射到字典的键值对设置上。
+        """
         self[key] = value
 
     def __delattr__(self, key: str) -> None:
+        """__delattr__方法
+        这是一个 属性删除 的特殊方法。
+        当通过 del 操作符删除一个属性时, Python 会调用这个方法。
+        在 EasyConfig 类中，这个方法将属性的删除操作映射到字典的键值对删除上。"""
         del self[key]
 
     def load(self, fpath: str, *, recursive: bool = False) -> None:
-        """load cfg from yaml
-
+        """定义一个load方法, 从yaml文件中加载配置
         Args:
-            fpath (str): path to the yaml file
-            recursive (bool, optional): recursily load its parent defaul yaml files. Defaults to False.
+            fpath (str): yaml文件的路径
+            recursive (bool, optional): 是否递归加载其父默认yaml文件. Defaults to False.
         """
+        # 如果fpath路径不存在，抛出FileNotFoundError异常
         if not os.path.exists(fpath):
             raise FileNotFoundError(fpath)
+        # eg: fpath = 'cfgs/s3dis/pointnet.yaml'
         fpaths = [fpath]
+        # 如果recursive为True, 递归加载其父默认yaml文件
         if recursive:
-            extension = os.path.splitext(fpath)[1]
-            while os.path.dirname(fpath) != fpath:
+            """递归示例
+            1、cfgs/s3dis/pointnet.yaml
+            2、cfgs/s3dis/default.yaml
+            3、cfgs/default.yaml
+            4、default.yaml
+            """
+            # os.path.splitext(fpath)返回一个元组，第一个元素是文件名，第二个元素是文件扩展名
+            extension = os.path.splitext(fpath)[1]  # extension = '.yaml'
+            # 检查是否到达根目录，若到达则停止循环
+            while os.path.dirname(fpath) != fpath:  # 当父目录路径不等于fpath时
+                # 将父目录路径传递给fpath
                 fpath = os.path.dirname(fpath)
+                # 将父目录路径下的default.yaml文件路径添加到fpaths列表中
                 fpaths.append(os.path.join(fpath, 'default' + extension))
+        '''fpaths列表示例
+        ['cfgs/s3dis/pointnet.yaml', 'cfgs/s3dis/default.yaml', 'cfgs/default.yaml', 'default.yaml']
+        '''
+        # 逆序遍历fpaths列表
         for fpath in reversed(fpaths):
+            # 如果fpath路径存在
             if os.path.exists(fpath):
+                # 打开fpath路径的文件
                 with open(fpath) as f:
+                    # 一个文件对象 f 中读取 YAML 格式的数据，并调用update方法将其更新到当前对象的属性中
                     self.update(yaml.safe_load(f))
 
     def reload(self, fpath: str, *, recursive: bool = False) -> None:
@@ -52,6 +85,7 @@ class EasyConfig(dict):
         self.load(fpath, recursive=recursive)
 
     # mutimethod makes python supports function overloading
+    # mutimethod使python支持函数重载
     @multimethod
     def update(self, other: Dict) -> None:
         for key, value in other.items():
