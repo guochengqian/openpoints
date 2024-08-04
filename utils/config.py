@@ -78,7 +78,7 @@ class EasyConfig(dict):
                 # 打开fpath路径的文件
                 with open(fpath) as f:
                     # 一个文件对象 f 中读取 YAML 格式的数据，并调用update方法将其更新到当前对象的属性中
-                    self.update(yaml.safe_load(f))
+                    self.update(yaml.safe_load(f)) # safe_load() 方法用于将yaml文件对象转换为字典
 
     def reload(self, fpath: str, *, recursive: bool = False) -> None:
         self.clear()
@@ -88,17 +88,33 @@ class EasyConfig(dict):
     # mutimethod使python支持函数重载
     @multimethod
     def update(self, other: Dict) -> None:
+        '''定义update方法, 用于递归更新yml文件的配置
+        Args:
+            other (Dict): 其他配置
+        说明：
+        遍历传入的字典other, 更新具有嵌套结构的配置对象
+        '''
         for key, value in other.items():
+            # 遍历other的键值对
             if isinstance(value, dict):
+                # value为嵌套字典
                 if key not in self or not isinstance(self[key], EasyConfig):
+                    # 将value字典设置为EasyConfig对象，确保递归正常进行
                     self[key] = EasyConfig()
-                # recursively update
+                # 递归调用update方法
                 self[key].update(value)
             else:
+                # 直接更新值
                 self[key] = value
 
     @multimethod
     def update(self, opts: Union[List, Tuple]) -> None:
+        '''定义update方法, 用于更新命令行参数的配置
+        Args:
+            opts (Union[List, Tuple]): 命令行参数
+        说明：
+        遍历传入的opts列表, 更新命令行参数的配置对象
+        '''
         index = 0
         while index < len(opts):
             opt = opts[index]
