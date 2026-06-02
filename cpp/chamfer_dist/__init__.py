@@ -4,15 +4,40 @@
 # @Last Modified by:   Haozhe Xie
 # @Last Modified time: 2019-12-18 15:06:25
 # @Email:  cshzxie@gmail.com
+"""Chamfer distance CUDA extension loader.
+
+The PyPI package ships Python sources and keeps compiled CUDA extensions
+optional. Importing this module should not fail on machines where the
+``chamfer`` extension has not been built yet; users only need the extension
+when they instantiate/use Chamfer distance losses.
+"""
 
 import torch
 
-import chamfer
+try:
+    import chamfer as _chamfer
+except ImportError as exc:
+    _chamfer = None
+    _chamfer_import_error = exc
+else:
+    _chamfer_import_error = None
+
+
+def _require_chamfer():
+    if _chamfer is None:
+        raise ImportError(
+            "The `chamfer` CUDA extension is not installed. Build OpenPoints "
+            "CUDA ops from source first, e.g. `cd cpp/chamfer_dist && "
+            "python setup.py install`, or install a wheel that includes the "
+            "compiled extension."
+        ) from _chamfer_import_error
+    return _chamfer
 
 
 class ChamferFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, xyz1, xyz2):
+        chamfer = _require_chamfer()
         dist1, dist2, idx1, idx2 = chamfer.forward(xyz1, xyz2)
         ctx.save_for_backward(xyz1, xyz2, idx1, idx2)
 
@@ -20,6 +45,7 @@ class ChamferFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_dist1, grad_dist2):
+        chamfer = _require_chamfer()
         xyz1, xyz2, idx1, idx2 = ctx.saved_tensors
         grad_xyz1, grad_xyz2 = chamfer.backward(xyz1, xyz2, idx1, idx2, grad_dist1, grad_dist2)
         return grad_xyz1, grad_xyz2
@@ -82,4 +108,3 @@ class ChamferDistanceL1(torch.nn.Module):
         dist1 = torch.sqrt(dist1)
         dist2 = torch.sqrt(dist2)
         return (torch.mean(dist1) + torch.mean(dist2))/2
-

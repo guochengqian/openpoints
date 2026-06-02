@@ -94,8 +94,8 @@ def fnv_hash_vec(arr):
     FNV64-1A
     """
     assert arr.ndim == 2
-    # Floor first for negative coordinates
     arr = arr.copy()
+    arr -= arr.min(0)
     arr = arr.astype(np.uint64, copy=False)
     hashed_arr = np.uint64(14695981039346656037) * \
         np.ones(arr.shape[0], dtype=np.uint64)

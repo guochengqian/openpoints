@@ -1,0 +1,6 @@
+include README.md
+include LICENSE
+recursive-include cpp *.cpp *.cu *.cxx *.h *.hpp *.pyx *.md *.py
+recursive-include dataset/semantic_kitti *.yaml *.txt *.cpp *.cxx *.h *.hpp *.pyx *.sh
+include dataset/matterport3d/category_mapping.tsv
+global-exclude *.py[cod] __pycache__/* *.so .DS_Store

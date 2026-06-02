@@ -30,9 +30,33 @@ OpenPoints currently supports reproducing the following models:
 
 
 
+## Installation
+
+OpenPoints can be installed as the `openpoints` Python package:
+
+```bash
+pip install openpoints
+```
+
+The PyPI package installs the Python library (`import openpoints`) and the files needed by the datasets and configs. CUDA/C++ operators such as `pointnet2_batch_cuda`, `pointops_cuda`, `chamfer`, and `emd_cuda` are still built from a source checkout or source distribution for now because PyTorch/CUDA wheels must match the user's Python, PyTorch, CUDA, and platform versions.
+
+For full training/evaluation with CUDA ops, install from source after installing PyTorch:
+
+```bash
+git clone --recursive https://github.com/guochengqian/openpoints.git
+cd openpoints
+pip install -e .[data,viz,wandb]
+cd cpp/pointnet2_batch && python setup.py install && cd ../..
+cd cpp/pointops && python setup.py install && cd ../..
+cd cpp/chamfer_dist && python setup.py install && cd ../..
+cd cpp/emd && python setup.py install && cd ../..
+```
+
+If the `openpoints` name is unavailable on a package index mirror, the same code can be published as `openpoints-torch`; the import name remains `openpoints`.
+
 ## Usage
 
-OpenPoints only serves as an engine. Please refer to [PointNeXt](https://github.com/guochengqian/PointNeXt) for a specific example of how to use and install
+OpenPoints serves as the engine for PointNeXt. Please refer to [PointNeXt](https://github.com/guochengqian/PointNeXt) for complete training, evaluation, and model-zoo examples.
 
 
 
