@@ -4,7 +4,22 @@ import torch
 from torch.autograd import Function
 import torch.nn as nn
 
-import pointops_cuda
+try:
+    import pointops_cuda
+except ImportError as exc:
+    class _MissingCudaExtension:
+        def __init__(self, module_name, error):
+            self.module_name = module_name
+            self.error = error
+
+        def __getattr__(self, name):
+            raise ImportError(
+                f"{self.module_name} is not installed. Build OpenPoints CUDA ops from "
+                "source first, e.g. `cd cpp/pointops && python setup.py install`, "
+                "or install a wheel that includes the compiled CUDA extension."
+            ) from self.error
+
+    pointops_cuda = _MissingCudaExtension("pointops_cuda", exc)
 
 
 class FurthestSampling(Function):

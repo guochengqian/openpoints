@@ -1,10 +1,28 @@
 import torch
-import emd_cuda
+
+try:
+    import emd_cuda as _emd_cuda
+except ImportError as exc:
+    _emd_cuda = None
+    _emd_cuda_import_error = exc
+else:
+    _emd_cuda_import_error = None
+
+
+def _require_emd_cuda():
+    if _emd_cuda is None:
+        raise ImportError(
+            "The `emd_cuda` extension is not installed. Build OpenPoints CUDA "
+            "ops from source first, e.g. `cd cpp/emd && python setup.py "
+            "install`, or install a wheel that includes the compiled extension."
+        ) from _emd_cuda_import_error
+    return _emd_cuda
 
 
 class EarthMoverDistanceFunction(torch.autograd.Function):
     @staticmethod
     def forward(ctx, xyz1, xyz2):
+        emd_cuda = _require_emd_cuda()
         xyz1 = xyz1.contiguous()
         xyz2 = xyz2.contiguous()
         assert xyz1.is_cuda and xyz2.is_cuda, "Only support cuda currently."
@@ -15,12 +33,11 @@ class EarthMoverDistanceFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_cost):
+        emd_cuda = _require_emd_cuda()
         xyz1, xyz2, match = ctx.saved_tensors
         grad_cost = grad_cost.contiguous()
         grad_xyz1, grad_xyz2 = emd_cuda.matchcost_backward(grad_cost, xyz1, xyz2, match)
         return grad_xyz1, grad_xyz2
-
-
 
 
 class earth_mover_distance(torch.nn.Module):
@@ -69,4 +86,3 @@ class earth_mover_distance(torch.nn.Module):
 #         xyz2 = xyz2.transpose(1, 2)
 #     cost = EarthMoverDistanceFunction.apply(xyz1, xyz2)
 #     return cost
-

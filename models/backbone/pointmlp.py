@@ -17,6 +17,7 @@ from ..layers import furthest_point_sample, random_sample, LocalAggregation, cre
 import logging
 import copy
 from ..build import MODELS
+from ...loss import build_criterion_from_cfg
 from ..layers import furthest_point_sample, fps
 from ..layers.group import QueryAndGroup
 import torch
@@ -354,11 +355,13 @@ class PointMLP(PointMLPEncoder):
     def __init__(self, in_channels=3, num_classes=15, embed_dim=64, groups=1, res_expansion=1.0,
                  activation="relu", bias=False, use_xyz=False, normalize="anchor",
                  dim_expansion=[2, 2, 2, 2], pre_blocks=[2, 2, 2, 2], pos_blocks=[2, 2, 2, 2],
-                 k_neighbors=[24, 24, 24, 24], reducers=[2, 2, 2, 2], group_args=None, **kwargs):
+                 k_neighbors=[24, 24, 24, 24], reducers=[2, 2, 2, 2], group_args=None,
+                 criterion_args=None, **kwargs):
         super().__init__(in_channels, embed_dim, groups, res_expansion, activation, bias, use_xyz,
                          normalize, dim_expansion, pre_blocks, pos_blocks, k_neighbors, reducers,
                          **kwargs
                          )
+        self.criterion = build_criterion_from_cfg(criterion_args) if criterion_args is not None else None
         self.classifier = nn.Sequential(
             nn.Linear(self.out_channels, 512),
             nn.BatchNorm1d(512),
@@ -373,6 +376,15 @@ class PointMLP(PointMLPEncoder):
 
     def forward(self, p, x=None):
         return self.forward_cls_feat(p, x)
+
+    def get_loss(self, pred, gt, inputs=None):
+        if self.criterion is None:
+            raise RuntimeError("PointMLP was built without criterion_args; cannot compute loss.")
+        return self.criterion(pred, gt.long())
+
+    def get_logits_loss(self, data, gt):
+        logits = self.forward(data)
+        return logits, self.get_loss(logits, gt, data)
 
     def forward_cls_feat(self, p, x=None):
         if hasattr(p, 'keys'): 
