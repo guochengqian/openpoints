@@ -22,7 +22,7 @@ class SmoothCrossEntropy(torch.nn.Module):
         self.return_valid = return_valid
         # Reduce label values in the range of logit shape
         if ignore_index is not None:
-            reducing_list = torch.range(0, num_classes).long().cuda(non_blocking=True)
+            reducing_list = torch.arange(num_classes + 1).long().cuda(non_blocking=True)
             inserted_value = torch.zeros((1, )).long().cuda(non_blocking=True)
             self.reducing_list = torch.cat([
                 reducing_list[:ignore_index], inserted_value,
