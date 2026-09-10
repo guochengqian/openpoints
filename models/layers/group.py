@@ -251,7 +251,8 @@ class QueryAndGroup(nn.Module):
             grouped_xyz = grouped_xyz - query_xyz.transpose(1, 2).unsqueeze(-1)  # relative position
             if self.normalize_dp:
                 grouped_xyz /= self.radius
-        grouped_features = grouping_operation(features, idx) if features is not None else None
+        # the CUDA kernel requires contiguous inputs; the grouper already guarantees that for the coordinates above.
+        grouped_features = grouping_operation(features.contiguous(), idx) if features is not None else None
         return grouped_xyz, grouped_features
 
 
@@ -314,7 +315,7 @@ class KNNGroup(nn.Module):
         if self.normalize_dp:
             grouped_xyz /= torch.amax(torch.sqrt(torch.sum(grouped_xyz**2, dim=1)), dim=(1, 2)).view(-1, 1, 1, 1)
         if features is not None:
-            grouped_features = grouping_operation(features, idx)
+            grouped_features = grouping_operation(features.contiguous(), idx)
             return grouped_xyz, grouped_features
         else:
             return grouped_xyz, None
